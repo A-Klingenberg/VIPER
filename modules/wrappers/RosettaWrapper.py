@@ -1,0 +1,1 @@
+#  for constant randomness use '-run:constant_seed' and '-run:jran <seed>' (default: 1111111)
