@@ -66,8 +66,8 @@ def get_amino_acids_on_chain(pdb: str, chain: str) -> str:
 
     :param pdb: Path to PDB file to read
     :param chain: Which chain to read
-    :return: String of amino acids in single letter formatting, or None, if chain can't be found in PDB and VIPER is
-        running in permissive mode
+    :return: String of amino acids in single letter formatting. The string may be empty if chain can't be found in PDB
+        and VIPER is running in permissive mode
     """
     logging.debug(f"Trying to get amino acid sequence of chain '{chain}' in '{pdb}'...")
     output = ''
