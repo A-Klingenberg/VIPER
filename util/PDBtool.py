@@ -141,8 +141,8 @@ def first_atom_on_chain(pdb: str, chain: str) -> Optional[dict]:
 
     :param pdb: Path to PDB to be read
     :param chain: Which chain to read
-    :return: A dict of properties  of the first atom in the specified chain, or None, if no first atom could be found and
-        VIPER is running in permissive mode
+    :return: A dict of properties  of the first atom in the specified chain, or None, if no first atom could be found
+        and VIPER is running in permissive mode
     """
     logging.debug(f"Trying to get first atom on chain '{chain}' in '{pdb}'...")
     with open(pdb, 'r') as file:
@@ -249,8 +249,8 @@ def euclidean_of_atoms(pdb: str, atom_num_1: int, atom_num_2: int) -> Optional[f
     :param pdb: Path to PDB to be read
     :param atom_num_1: Atom number of first atom
     :param atom_num_2: Atom number of second atom
-    :return: Distance between two atoms in angstroms, or None, if the distance could not be computed and VIPER is running
-        in permissive mode
+    :return: Distance between two atoms in angstroms, or None, if the distance could not be computed and VIPER is
+        running in permissive mode
     """
     logging.debug(f"Trying to find euclidean distance between atom {atom_num_1} and {atom_num_2} in '{pdb}'...")
     atom_1 = get_atom(pdb, atom_num_1)
@@ -290,10 +290,11 @@ def rebuild_atom_line(atoms: list) -> str:
     return output
 
 
+# FIXME: Also renumber SSBOND header entries and write them to file?
 def renumber_ascending(pdb: str, rename: str = None) -> None:
     """
     Write out a PDB file in the same directory as the input PDB with atom number and sequence number in ascending order.
-    There is a limit on how large atom (serial) ids and residue ids may be inherent in the PDB format (99,999 and 9,999).
+    There is an inherent limit on how large atom (serial) ids and residue ids may be (99,999 and 9,999).
     If the proteins are too large, the count may exceed this number. Should VIPER be running in permissive mode, the ids
     will be taken modulo 100,000 and 10,000, respectively.
     This may cause errors later on, since ids will be duplicated!
@@ -323,7 +324,6 @@ def renumber_ascending(pdb: str, rename: str = None) -> None:
                     o.write(f'REMARK    3 PROGRAM    : VIPER, PDBtool {TOOL_VER} \n')
                     expdta_written = True
                 if line[16] != 'B' and line[26] == ' ':  # Don't allow secondary atoms
-                    current_atom_number = line[section_atom_number[0]:section_atom_number[1]]
                     current_residue_number = int(line[section_residue_number[0]:section_residue_number[1]])
                     if len(chains) == 0:
                         chains.append(line[section_chain_id])
@@ -343,13 +343,16 @@ def renumber_ascending(pdb: str, rename: str = None) -> None:
                                                       f"respectively. Proceeding may cause unexpected program "
                                                       f"behaviour.")
                             line = line[:6] + str(running_atom_count % 100000).rjust(5) + line[11:22] + str(
-                                running_residue_count).rjust(4) + line[26:]
+                                running_residue_count % 10000).rjust(4) + line[26:]
                         else:
                             logging.log(logging.ERROR, f"While renumbering {pdb} atom or residue count exceeded legal "
                                                        f"limits (100000 or 10000, respectively. Aborting! You might "
                                                        f"want to try to reduce the proteins to a cut out version "
                                                        f"focusing on the binding site.")
                             sys.exit(1)
+                    else:
+                        line = line[:6] + str(running_atom_count).rjust(5) + line[11:22] \
+                               + str(running_residue_count).rjust(4) + line[26:]
                     running_atom_count += 1
                     o.write(line)
         o.write('TER\nEND\n')
@@ -807,31 +810,25 @@ def update_chain_id(pdb: str, id_mapping: dict, rename: str = None) -> None:
         logging.info(f"Wrote PDB with updated chain ids to '{new_name}'")
 
 
-# FIXME: Also renumber SSBOND header entries
-def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str, rename: str = None) -> None:
+# FIXME: Also renumber SSBOND header entries, or else remove them
+def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, rename: str = None) -> None:
     """
     Align chains and for amino acids that overlap, renumber them to the reference chains
-    numbering. Update them to PDB.
+    numbering. Writes an updated PDB to disk.
 
-    Parameters
-    __________
-    custom : str
-        comma sep. str of numbering for shorest chain if provided by user
+    :param pdb: The PDB whose chains shall be aligned
+    :param upd_chains: Which chains in the base PDB shall be aligned, should be uppercase chain ids without separators
+    :param pdb_ref: The reference PDB to align against
+    :param custom: Optional comma separated str of numbering to apply to the shortest chain
+    :param rename: Optional name for the updated PDB. Default is '{pdb}_orinum.pdb'
     """
 
     def find_gap(seq: str) -> int:
         """
-        Counts how may gaps until start of seq and reports position
+        Counts the number of gap characters ('-') in seq from the start until the first non-gap character appears.
 
-        Parameters
-        __________
-        seq : str
-            sequence string to be search for gap character ("-")
-
-        Returns
-        _______
-        count : int
-            position in which first gap character appears
+        :param seq: sequence string to be searched for non-gap character ("-")
+        :return Index of first non-gap character
         """
         count = 0
         for letter in seq:
@@ -875,7 +872,7 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str, rename: s
         if len(target_seqs[chain]) < shortest_num:
             shortest_chain = chain
             shortest_num = len(target_seqs[chain])
-    if custom != "...":
+    if custom is not None:
         custom_num = custom.split(",")
         ref_aa[shortest_chain] = {}
         for aa in target_seqs[shortest_chain]:
@@ -891,14 +888,14 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str, rename: s
             for line in t:
                 if line[0:6] == 'ATOM  ':
                     if aa_num < 0:  # Checks to see if we're just starting
-                        aa_num = int(line[section_residue_number[0]: section_residue_number[1]])  # Tell me current amino acid number
+                        aa_num = int(line[section_residue_number[0]: section_residue_number[1]])
                         current_chain = line[section_chain_id]  # Tells us the starting chain
                     if current_chain != line[section_chain_id]:  # Checks to see if we're on a new chain
                         ref_aa.pop(current_chain)  # Removes previous chain from list
                         current_chain = line[section_chain_id]  # Updates current chain
                         aa_num = int(
                             line[section_residue_number[0]: section_residue_number[1]])  # Updates current aa count
-                    if aa_num != int(line[section_residue_number[0]: section_residue_number[1]]):  # Tells us if we're on a new aa
+                    if aa_num != int(line[section_residue_number[0]: section_residue_number[1]]):
                         ref_aa[line[section_chain_id]].pop(
                             list(ref_aa[line[section_chain_id]])[0])  # Removes last counted AA
                         aa_num = int(line[section_residue_number[0]: section_residue_number[1]])
@@ -912,7 +909,7 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str, rename: s
                         temp_line += str(next_num).rjust(4)
                         temp_line += line[section_residue_number[1]:]
                         w.write(temp_line)
-                    else:  # If we're skipping a chain we just write it but we keep atom numbering
+                    else:  # If we're skipping a chain we just write it but keep atom numbering
                         temp_line += line[11:]
                         w.write(temp_line)
                 else:
