@@ -1,3 +1,3 @@
-from . import ConfigManager, PDBtool
+from . import PDBtool
 
-__all__ = [ConfigManager, PDBtool]
+__all__ = [PDBtool]

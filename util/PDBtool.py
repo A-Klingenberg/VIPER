@@ -18,7 +18,10 @@ from VIPER import configmanager as cm
 
 TOOL_VER = "2.0"
 
-# Magic numbers to extract data from PDB format.
+# These types of PDB records will be carried / written over into the newly generated file when PDBs are modified
+KEEP_LINES = ["HEADER", "REMARK", "SSBOND", "ATOM  ", "TER   ", "END   "]
+
+# Magic numbers to extract data from PDB format, coordinate section, ATOM records.
 # These specify the columns in which the relevant data is encoded in standard PDB files.
 # See: https://www.wwpdb.org/documentation/file-format-content/format33/sect9.html#ATOM
 section_atom_number = [6, 11]
@@ -33,6 +36,13 @@ section_z = [46, 54]
 section_occupancy = [54, 60]
 section_temp_factor = [60, 66]
 section_element = [76, 78]
+# Magic numbers to extract data from PDB format, connectivity section, SSBOND records.
+# These specify the columns in which the relevant data is encoded in standard PDB files.
+# See: https://www.wwpdb.org/documentation/file-format-content/format33/sect6.html#SSBOND
+section_ssbond_residue_id1 = [17, 21]
+section_ssbond_chain_id1 = 15
+section_ssbond_residue_id2 = [31, 35]
+section_ssbond_chain_id2 = 29
 
 
 def get_chains(pdb: str) -> Optional[list]:
@@ -290,7 +300,6 @@ def rebuild_atom_line(atoms: list) -> str:
     return output
 
 
-# FIXME: Also renumber SSBOND header entries and write them to file?
 def renumber_ascending(pdb: str, rename: str = None) -> None:
     """
     Write out a PDB file in the same directory as the input PDB with atom number and sequence number in ascending order.
@@ -298,6 +307,7 @@ def renumber_ascending(pdb: str, rename: str = None) -> None:
     If the proteins are too large, the count may exceed this number. Should VIPER be running in permissive mode, the ids
     will be taken modulo 100,000 and 10,000, respectively.
     This may cause errors later on, since ids will be duplicated!
+    Note: Only HEADER, SSBOND, and ATOM records will be kept, and no secondary positions will be copied over
 
     :param pdb: Path to PDB to be read
     :param rename: Optional name for PDB file being created, otherwise use "_renumbered" appended to original name
@@ -308,31 +318,42 @@ def renumber_ascending(pdb: str, rename: str = None) -> None:
     if rename:
         out_name = rename
 
+    header = (
+        f"EXPDTA    DOCKING MODEL           RENUMBERED\nREMARK    3                                 \nREMARK    3 "
+        f"PROGRAM    : VIPER, PDBtool {TOOL_VER} \n")
+    ssbond = ""
+    ssbond_res_ids = {}  # Will become mapping for updated ids
+    coordinates = ""
+
     running_atom_count = 1  # Keeps track of atom number
     previous_residue_number = -10000
     running_residue_count = 0  # Keeps track of residue number
     chains = []  # Chains already seen
-    expdta_written = False
-    with open(pdb, "r") as i, open(out_name, "w+") as o:
+    with open(pdb, "r") as i:
         for line in i:
             if line[0:6] == 'HEADER':
-                o.write(line)
+                header = line + header
+            if line[0:6] == "SSBOND":
+                ssbond += line
+                ssbond_res_ids[(int(line[section_ssbond_residue_id1[0]:section_ssbond_residue_id1[1]]),
+                                line[section_ssbond_chain_id1])] = -1
+                ssbond_res_ids[(int(line[section_ssbond_residue_id2[0]:section_ssbond_residue_id2[1]]),
+                                line[section_ssbond_chain_id2])] = -1
             if line[0:6] == 'ATOM  ':  # Only copy over atoms
-                if not expdta_written:
-                    o.write('EXPDTA    DOCKING MODEL           RENUMBERED\n')
-                    o.write('REMARK    3                                 \n')
-                    o.write(f'REMARK    3 PROGRAM    : VIPER, PDBtool {TOOL_VER} \n')
-                    expdta_written = True
                 if line[16] != 'B' and line[26] == ' ':  # Don't allow secondary atoms
                     current_residue_number = int(line[section_residue_number[0]:section_residue_number[1]])
                     if len(chains) == 0:
                         chains.append(line[section_chain_id])
                     elif line[section_chain_id] != chains[-1]:  # Encountered new chain
                         chains.append(line[section_chain_id])
-                        o.write('TER\n')
+                        coordinates += "TER\n"
                     if current_residue_number != previous_residue_number:  # Encountered next residue
                         previous_residue_number = int(line[section_residue_number[0]:section_residue_number[1]])
                         running_residue_count += 1
+                    # Update SSBOND mapping with new res_id
+                    for k in ssbond_res_ids.keys():
+                        if current_residue_number == k[0] and line[section_chain_id] == k[1]:
+                            ssbond_res_ids[(current_residue_number, line[section_chain_id])] = running_residue_count
                     # Update atom count and residue count
                     # Because there are only 5 characters for the atom serial number and 4 for the residue, we need
                     # to restrict the number space to < 100,000 and 10,000, respectively
@@ -353,9 +374,18 @@ def renumber_ascending(pdb: str, rename: str = None) -> None:
                     else:
                         line = line[:6] + str(running_atom_count).rjust(5) + line[11:22] \
                                + str(running_residue_count).rjust(4) + line[26:]
+
                     running_atom_count += 1
-                    o.write(line)
-        o.write('TER\nEND\n')
+                    coordinates += line
+        coordinates += "TER\nEND\n"
+    for old_entry, new_entry in ssbond_res_ids.items():
+        old = old_entry[1] + " " + str(old_entry[0]).rjust(4)
+        new = old_entry[1] + " " + str(new_entry).rjust(4)
+        ssbond = ssbond.replace(old, new, 1)
+    with open(out_name, "w+") as o:
+        o.write(header)
+        o.write(ssbond)
+        o.write(coordinates)
 
 
 def remove_chain(pdb: str, chain_id: List[str], rename: str = None) -> None:
@@ -373,7 +403,7 @@ def remove_chain(pdb: str, chain_id: List[str], rename: str = None) -> None:
         out_name = rename
     with open(pdb, 'r') as i, open(out_name, 'w+') as o:
         for line in i:
-            if line[0:6] == 'ATOM  ' or line[0:6] == 'TER   ':
+            if line[0:6] in KEEP_LINES:
                 if line[section_chain_id].upper() not in ids:
                     o.write(line)
         logging.info(f"PDB with chains {ids} removed saved to {rename}!")
@@ -651,6 +681,7 @@ def get_center(pdb: str) -> list:
     return centroid
 
 
+# TODO: Have this keep HEADER, REMARK, and SSBOND records as well
 def center(pdb: str, rename: str = None) -> None:
     """
     Gather all atoms in the file and calculate the average XYZ coord to find the center of the structure. Write out
@@ -723,6 +754,8 @@ def center(pdb: str, rename: str = None) -> None:
         logging.info(f"Wrote centered pdb to {new_name}")
 
 
+# TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
+#  Should this be taken from pdb_1 or pdb_2? Configurable?
 def join(pdb_1: str, pdb_2: str, rename: str = None) -> None:
     f"""
     Joins together two PDB files by appending first PDBs atoms to second PDBs atoms
@@ -745,9 +778,12 @@ def join(pdb_1: str, pdb_2: str, rename: str = None) -> None:
     with open(new_name, "w") as o:
         for line in atoms_lines:
             o.write(line)
+        o.write("END\n")
         logging.info(f"Wrote joined PDB to '{new_name}'!")
 
 
+# TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
+# FIXME: TER in between chains is missing
 def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> None:
     """
     Update the chain order. Must send in a list with identical number of chains
@@ -775,9 +811,12 @@ def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> None:
         new_name = rename
     with open(new_name, "w") as f:
         f.write(rebuild_atom_line(new_order))
+        f.write("TER\nEND\n")
         logging.info(f"Wrote reordered PDB to '{new_name}'!")
 
 
+# TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
+# FIXME: TER is missing inbetween chains
 def update_chain_id(pdb: str, id_mapping: dict, rename: str = None) -> None:
     """
     Update the labels based on submitted chain dictionary
@@ -807,10 +846,12 @@ def update_chain_id(pdb: str, id_mapping: dict, rename: str = None) -> None:
         new_name = rename
     with open(new_name, "w") as f:
         f.write(rebuild_atom_line(new_order))
+        f.write("TER\nEND\n")
         logging.info(f"Wrote PDB with updated chain ids to '{new_name}'")
 
 
-# FIXME: Also renumber SSBOND header entries, or else remove them
+# TODO: Have this keep HEADER, REMARK, and SSBOND records as well. Also renumber SSBOND records if present
+# FIXME: Doesn't write out TER or END records
 def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, rename: str = None) -> None:
     """
     Align chains and for amino acids that overlap, renumber them to the reference chains

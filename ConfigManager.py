@@ -14,14 +14,23 @@ from typing import Optional, Any
 import VIPER
 
 
-class ConfigManager:
+class _Singleton(type):
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(_Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+
+class ConfigManager(metaclass=_Singleton):
     command_args: dict = None
     file_config: dict = None
     program_path: str = None
     log_path: str = None
 
     def __init__(self, args: argparse.Namespace = None,
-                 base_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))):
+                 base_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), f"..{os.sep}"))):
         """
         This method initializes the config manager for VIPER. It saves any arguments given to the program and sets any
         further settings, if necessary.
@@ -30,11 +39,20 @@ class ConfigManager:
         :param args: The command-line arguments given to VIPER, as parsed by argparse.ArgumentParser().parse_args()
         :param base_path: The base path of VIPER. Based on this, subfolders will be created and files will be saved.
         """
+        print(f"BASE PATH: {base_path}")
+        self.program_path = os.path.normpath(base_path) + os.sep
+        print(f"PROG PATH: {self.program_path}")
+        c_path = None
         if args:
             self.command_args = vars(args)
+            if self.command_args["config"]:
+                c_path = self.command_args["config"]
+        if not c_path:
+            # Fallback: If path to config file is not set via command line, expect config.json in same folder as main.py
+            c_path = self.program_path + "config.json"
 
         try:
-            with open(args.config, 'r') as config_file:
+            with open(c_path, 'r') as config_file:
                 conf_in: dict = json.load(config_file)
                 # TODO: Validate file_config? Set defaults? Exit if not all settings are set?
 
@@ -43,46 +61,47 @@ class ConfigManager:
 
                 # TODO: Support list entries? Maybe just specify config format to not include them
                 def flatten_level(d: dict, add_to: dict, prefix: str = None) -> None:
-                    for k, v in d:
+                    for k, v in d.items():
                         if isinstance(v, dict):
-                            flatten_level(k, add_to, prefix=f"{str(k)}.")
+                            flatten_level(v, add_to, prefix=f"{str(k)}.")
                         else:
                             if prefix:
                                 add_to[f"{prefix}{str(k)}"] = v
                             else:
                                 add_to[str(k)] = v
+
                 flatten_level(conf_in, json_conf)
 
-                self.file_config = dict(sorted(json_conf))
+                self.file_config = json_conf
         except OSError:
-            print(f"Could not open config file at '{config_file}'.")
-            if "permissive" not in self.command_args:
+            print(f"Could not open config file at '{c_path}'.")
+            if self.command_args and "permissive" not in self.command_args:
                 print(f"Aborting...")
                 sys.exit(1)
             else:
+                # Note: Permissive is true by default
                 print(f"Trying to continue with just command line arguments - this might cause errors down the line!")
-
-        self.program_path = base_path
 
         # Initialize main logger
         if lp := self.get("log_path"):
-            self.log_path = self.program_path + os.sep + lp
+            self.log_path = os.path.normpath(self.program_path + lp) + os.sep
         else:  # Fallback
-            self.log_path = self.program_path + os.sep + "Logs"
+            self.log_path = self.program_path + "Logs" + os.sep
 
         # If the folder where the logs shall be saved doesn't exist, create it
         os.makedirs(self.log_path, exist_ok=True)
 
         if self.get("verbose"):
             logging.basicConfig(level=logging.DEBUG,
-                                filename=os.path.abspath(self.log_path + os.sep + "log.txt"),
+                                filename=os.path.abspath(self.log_path + "log.txt"),
                                 format="%(asctime)s [%(levelname)s] (%(filename)s:%(module)s): %(message)s",
                                 force=True)
         else:
             logging.basicConfig(level=logging.INFO,
-                                filename=os.path.abspath(self.log_path + os.sep + "log.txt"),
+                                filename=os.path.abspath(self.log_path + "log.txt"),
                                 format="%(asctime)s [%(levelname)s] (%(filename)s:%(module)s): %(message)s",
                                 force=True)
+        self.log_config()
 
     def get(self, setting: str) -> Optional[Any]:
         """
@@ -113,3 +132,4 @@ class ConfigManager:
         if self.command_args:
             logging.info(f"---------- [ COMMAND LINE ARGUMENTS ] ----------")
             logging.info(pformat(self.command_args))
+

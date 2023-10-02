@@ -1,7 +1,7 @@
-import util
+import ConfigManager
 
 VERSION = 0.1
-configmanager: util.ConfigManager = None
+configmanager: ConfigManager = None
 
 
 # TODO: Does this need to be a class?
@@ -9,7 +9,7 @@ class VIPER:
     clean_pdb_reference = None
     predocked_reference_pdb = None
 
-    def __init__(self, cm: util.ConfigManager):
+    def __init__(self, cm: ConfigManager):
         self.cm = cm
         global configmanager
         configmanager = cm

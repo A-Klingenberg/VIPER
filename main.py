@@ -4,9 +4,9 @@ Main file for VIPER.
 import argparse
 import os
 
-from util.ConfigManager import ConfigManager
+from ConfigManager import ConfigManager
 
-configmanager: ConfigManager = ConfigManager()
+configmanager: ConfigManager = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -15,11 +15,11 @@ def parse_args() -> argparse.Namespace:
     # TODO: Note: adding configs with dots in the name works as expected now
     parser.add_argument("PDB", help="The path to a PDB file containing the viral surface protein bound to the human "
                                     "cell surface protein", type=str)
-    parser.add_argument("--config", help="The path to a config file", type=str, action="store_true")
+    parser.add_argument("--config", help="The path to a config file", type=str)
     parser.add_argument("--log_path", help="The path to where log files should be written", type=str)
-    parser.add_argument("--verbose", help="Set this flag to log additional information", type=bool)
+    parser.add_argument("--verbose", help="Set this flag to log additional information", type=bool, default=False)
     parser.add_argument("--permissive", help="Set this flag to have VIPER continue running even if it encounters "
-                                             "problems which might lead to unexpected behaviour", type=bool)
+                                             "problems which might lead to unexpected behaviour", type=bool, default=True)
     parser.add_argument("--num_CPU_cores", help="How many CPU cores to use", type=int, default=1)
     # rosetta config
     parser.add_argument("--rosetta_config.path", help="The path to your rosetta executable", type=str)
@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     global configmanager
-    configmanager = ConfigManager(args, base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
+    configmanager = ConfigManager(args=args, base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
 
 
 if __name__ == "__main__":
