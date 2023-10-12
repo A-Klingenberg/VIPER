@@ -27,6 +27,7 @@ class ConfigManager(metaclass=_Singleton):
     command_args: dict = None
     file_config: dict = None
     program_path: str = None
+    results_path: str = None
     log_path: str = None
 
     def __init__(self, args: argparse.Namespace = None,
@@ -39,9 +40,7 @@ class ConfigManager(metaclass=_Singleton):
         :param args: The command-line arguments given to VIPER, as parsed by argparse.ArgumentParser().parse_args()
         :param base_path: The base path of VIPER. Based on this, subfolders will be created and files will be saved.
         """
-        print(f"BASE PATH: {base_path}")
         self.program_path = os.path.normpath(base_path) + os.sep
-        print(f"PROG PATH: {self.program_path}")
         c_path = None
         if args:
             self.command_args = vars(args)
@@ -54,12 +53,12 @@ class ConfigManager(metaclass=_Singleton):
         try:
             with open(c_path, 'r') as config_file:
                 conf_in: dict = json.load(config_file)
-                # TODO: Validate file_config? Set defaults? Exit if not all settings are set?
+                # TODO: Is there a need to validate file_config?
 
                 # recursively flatten JSON structure
                 json_conf = {}
 
-                # TODO: Support list entries? Maybe just specify config format to not include them
+                # TODO: Support list entries?
                 def flatten_level(d: dict, add_to: dict, prefix: str = None) -> None:
                     for k, v in d.items():
                         if isinstance(v, dict):
@@ -81,6 +80,16 @@ class ConfigManager(metaclass=_Singleton):
             else:
                 # Note: Permissive is true by default
                 print(f"Trying to continue with just command line arguments - this might cause errors down the line!")
+
+        # Set results path
+        p = None
+        if "results_path" in self.file_config.keys() and self.file_config["results_path"] is not None:
+            p = self.file_config["results_path"]
+        if "results_path" in self.command_args.keys() and self.command_args["results_path"] is not None:
+            p = self.command_args["results_path"]
+        if p is None:
+            p = "output"  # Fallback
+        self.results_path = os.path.join(self.program_path, p) + os.sep
 
         # Initialize main logger
         if lp := self.get("log_path"):
@@ -111,6 +120,10 @@ class ConfigManager(metaclass=_Singleton):
         :param setting: A string representing the name of the setting to be retrieved
         :return: The value of the setting, or None if that setting hasn't been configured
         """
+        if setting == "program_path":
+            return self.program_path
+        if setting == "results_path":
+            return self.results_path
         if self.command_args and setting in self.command_args:
             return self.command_args[setting]
         elif self.file_config and setting in self.file_config:
@@ -124,6 +137,7 @@ class ConfigManager(metaclass=_Singleton):
 
         :return: None
         """
+        logging.info(f"Running Python ver. {sys.version}")
         logging.info(f"Running VIPER version {VIPER.VERSION}.")
         logging.info(f"Using the following configuration:")
         if self.file_config:

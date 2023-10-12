@@ -4,6 +4,7 @@
   "num_CPU_cores": 4,
   "rosetta_config": {
     "path": "",
+    "path_out": "rosetta_output",
     "random_seed": 0,
     "relax_protein_runs": 100,
     "relax_xml_runs": 40,
