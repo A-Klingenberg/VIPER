@@ -44,6 +44,10 @@ class _SelectionStrategies:
             if self.ld_linear_stepping > 0:
                 logging.warning(f"You have set a positive stepping ({self.ld_linear_stepping}) "
                                 f"- did you perhaps mean a negative stepping (reduction of x% per step)?")
+            if self.ld_initial_bonus - (self.ld_max_length - self.ld_min_length) * self.ld_linear_stepping != \
+                    self.ld_max_penalty:
+                logging.warning(f"Your configured settings for the linear damping factor yield a function that is not "
+                                f"continuous. There will be a jump when reaching the length_damping_max_length!")
 
         @abstractmethod
         def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
