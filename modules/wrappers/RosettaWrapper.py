@@ -1,9 +1,18 @@
+from __future__ import annotations
+
 #  for constant randomness use '-run:constant_seed' and '-run:jran <seed>' (default: 1111111)
 import logging
 import os.path
+import re
+import statistics
 import subprocess
 import sys
-from typing import Union, Tuple
+from dataclasses import dataclass, field
+from io import StringIO
+from pathlib import Path
+from typing import Union, List
+
+import pandas as pd
 
 from ConfigManager import ConfigManager
 from VIPER import configmanager as cm
@@ -16,26 +25,20 @@ class RosettaWrapper:
     def __init__(self, config: ConfigManager = None):
 
         # Initialize apps
-        valid = False
         if r := cm.get("rosetta_config.path"):
-            # TODO: Is this robust enough to determine that the path is pointing to the rosetta executables?
-            if "/main/source/bin" not in r:
-                app_path = os.path.join(os.path.normpath(r), "main", "source", "bin") + os.sep
-            else:
-                app_path = os.path.normpath(r) + os.sep
-            for app in os.listdir(app_path):
-                components = app.split(".")
+            # TODO: This might be fairly slow. Defer loading to (non-blocking) background process and continue?
+            logging.info(f"Loading Rosetta apps...")
+            app_paths = [p.resolve() for p in Path(r).glob("**/*") if
+                         (".mpi." in p.name or ".default." in p.name) and ("release" in p.name or "debug" in p.name)]
+            for app in app_paths:
+                components = app.name.split(".")
                 # For now, only accept mpi or default versions, and prefer mpi
-                if ".mpi" in app:
-                    valid = True  # We have found at least one executable, path is valid
-                    self.apps[components[0]] = app
-                    continue
-                elif ".default" in app:
-                    valid = True  # We have found at least one executable, path is valid
-                    self.apps[components[0]] = app
-        elif not valid:
-            logging.critical(
-                f"Path to Rosetta has been deemed invalid! Either it has not been set, or no apps could be found!")
+                if ".mpi." in str(app.name):
+                    logging.debug(f"Found app '{components[0]}' in path '{str(app)}'!")
+                    self.apps[components[0]] = str(app)
+                elif ".default." in str(app.name):
+                    logging.debug(f"Found app '{components[0]}' in path '{str(app)}'!")
+                    self.apps[components[0]] = str(app)
 
         # Make directories
         self.base_path = os.path.join(cm.get("results_path"),
@@ -70,20 +73,21 @@ class RosettaWrapper:
         if isinstance(options, str):
             if not app:
                 logging.error(
-                    f"When passing a path to run rosetta you also need to supply an application to run! Aborting... ")
+                    f"When passing a path to an options file you also need to supply an application to run! Aborting...")
                 sys.exit(1)
             elif app not in self.apps.keys():
                 logging.error(f"The application you wanted to run ({app}) could not be found! Aborting...")
                 sys.exit(1)
-            if os.path.isfile(os.path.normpath(options)):
-                logging.info(f"Trying to run application '{app}' with options '{options}'...")
-                RosettaWrapper._dispatch(self.apps[app], options)
+            if not os.path.isfile(os.path.normpath(options)):
+                logging.error(f"The path '{options}' to the options file is not a file!")
+            logging.info(f"Trying to run application '{app}' with options '{options}'...")
+            RosettaWrapper._dispatch(self.apps[app], options)
         elif isinstance(options, dict):
             o = self.preprocess_options(options)
 
         pass
 
-    def preprocess_options(self, flag: dict, override:dict = None, pdb: str = None) -> dict:
+    def preprocess_options(self, flag: dict, override: dict = None, pdb: str = None) -> dict:
         for k, v in flag.items():
             if flag["app"] in self.apps.keys():
                 flag["app"] = self.apps[flag["app"]]
@@ -132,3 +136,86 @@ class Flags:
         "-nstruct": None,
 
     }
+
+
+class REBprocessor:
+    """
+    Parses results from Residue Energy Breakdown
+    """
+
+    @staticmethod
+    def read_in(breakdown_file: str) -> tuple:
+        """
+        Parses the output from a residue energy breakdown run and prepares it for further analysis.
+
+        :param breakdown_file:
+        :return:
+        """
+        totals = []
+        logging.info(f"Reading in residue energy breakdown file {breakdown_file}...")
+        formatted = ""
+        # Reformat to CSV-like
+        with open(breakdown_file, "r") as i:
+            pattern = re.compile(" +")
+            for line in i:
+                formatted += re.sub(pattern, ",", line)
+        csv = pd.read_csv(StringIO(formatted),
+                          usecols=lambda c: c.upper() in ["PDBID1", "RESTYPE1", "PDBID2", "RESTYPE2", "TOTAL"])
+
+        # Get amino acids on chains and interactions per amino acid
+        nlist = []
+        seen = {}
+        for row in csv.itertuples(index=False, name="Interaction"):
+            if row.restype2 == "onebody":
+                continue
+            # Create Node and parse data
+            if row.pdbid1 not in seen:
+                node = REBprocessor.Node(amino_acid=row.restype1, residue=int(row.pdbid1[:-1]), chain=row.pdbid1[-1],
+                                         partners=[(row.pdbid2, float(row.total))])
+                if row.pdbid2[-1] in node.strength:
+                    node.strength[row.pdbid2[-1]] += row.total
+                else:
+                    node.strength[row.pdbid2[-1]] = row.total
+                seen[row.pdbid1] = node
+                nlist.append(node)
+                totals.append(row.total)
+            else:  # Update Node with parsed data
+                node = seen[row.pdbid1]
+                node.partners.append((row.pdbid2, float(row.total)))
+                totals.append(row.total)
+                if row.pdbid2[-1] in node.strength:
+                    node.strength[row.pdbid2[-1]] += row.total
+                else:
+                    node.strength[row.pdbid2[-1]] = row.total
+            continue
+
+        # Update neighbors
+        for residueid, node in seen.items():
+            prev_id = str(int(residueid[:-1]) - 1) + residueid[-1]
+            if prev_id in seen:
+                node.neighbor_prev = seen[prev_id]
+            next_id = str(int(residueid[:-1]) + 1) + residueid[-1]
+            if next_id in seen:
+                node.neighbor_next = seen[next_id]
+
+        stats = {"mean": statistics.mean(totals),
+                 "stdev": statistics.stdev(totals),
+                 "min": min(totals),
+                 "max": max(totals)}
+        return nlist, stats
+
+    @dataclass
+    class Node:
+        amino_acid: str = None
+        residue: int = None
+        chain: str = None
+        partners: List[tuple] = None  # (<partner residue id + chain id>, <interaction energy>)
+        strength: dict = field(default_factory=lambda: ({}))
+        neighbor_prev: REBprocessor.Node = None
+        neighbor_next: REBprocessor.Node = None
+
+        def __contains__(self, item):
+            return item == str(self.residue) + self.chain
+
+        def __repr__(self):
+            return str(self.residue) + self.chain + " " + str(self.amino_acid)

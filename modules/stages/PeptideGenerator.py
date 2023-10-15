@@ -1,208 +1,132 @@
 from __future__ import annotations
 
 import logging
-import re
-import statistics
 import sys
-from dataclasses import dataclass, field
-from io import StringIO
-from operator import attrgetter
-from typing import List
-
-from VIPER import configmanager as cm
-
-import pandas as pd
+from abc import abstractmethod, ABCMeta
+from typing import List, final, Type
 
 import custom_funcs
+from VIPER import configmanager as cm
+from modules.wrappers.RosettaWrapper import REBprocessor
 
 
-class REBprocessor:
-    """
-    Parses results from Residue Energy Breakdown
-    """
+class PeptideGenerator:
+    pass
 
-    energy_cutoff: float = None
-    max_side_extension: int = None
-    max_length: int = None
-    ignore_neighbors: bool = None
-    always_include_direct_neighbors: bool = None
-    prefilter_by_energy: bool = None
-    max_neighbor_distance: int = None
 
-    def __init__(self, energy_cutoff: float = -0.01, max_side_extension: int = 2, max_length: int = -1,
-                 ignore_neighbors: bool = False, always_include_direct_neighbors: bool = False,
-                 prefilter_by_energy: bool = False, max_neighbor_distance: int = 1):
+class _SelectionStrategies:
+    class SelectionStrategy(metaclass=ABCMeta):
         """
-        Initializes the residue energy breakdown parser.
-
-        :param energy_cutoff: Cutoff for which residue interactions to include, noninclusive. Any residue interactions
-            with abs(total energy) < energy_cutoff will not be included. Default: 0.01
+        Defines behavior a selection strategy needs to implement. Namely, given a list of nodes
         """
-        # TODO: Initialize through ConfigManager instead
-        self.energy_cutoff = energy_cutoff
-        self.max_side_extension = max_side_extension
-        self.max_length = max_length
-        self.ignore_neighbors = ignore_neighbors
-        self.always_include_direct_neighbors = always_include_direct_neighbors
-        self.prefilter_by_energy = prefilter_by_energy
-        self.max_neighbor_distance = max_neighbor_distance
 
-    def read_in(self, breakdown_file: str) -> tuple:
-        """
-        Parses the output from a residue energy breakdown run and prepares it for further analysis.
-
-        :param breakdown_file:
-        :return:
-        """
-        totals = []
-        logging.info(f"Reading in residue energy breakdown file {breakdown_file}...")
-        formatted = ""
-        # Reformat to CSV-like
-        with open(breakdown_file, "r") as i:
-            pattern = re.compile(" +")
-            for line in i:
-                formatted += re.sub(pattern, ",", line)
-        csv = pd.read_csv(StringIO(formatted),
-                          usecols=lambda c: c.upper() in ["PDBID1", "RESTYPE1", "PDBID2", "RESTYPE2", "TOTAL"])
-
-        # Get amino acids on chains and interactions per amino acid
-        # chains = {}
-        # interactions = {}
-        nlist = []
-        seen = {}
-        for row in csv.itertuples(index=False, name="Interaction"):
-            if (row.restype2 == "onebody") or (
-                    self.prefilter_by_energy and (float(row.total) < self.energy_cutoff)):
-                continue
-            # Create Node and parse data
-            if row.pdbid1 not in seen:
-                node = REBprocessor.Node(amino_acid=row.restype1, residue=int(row.pdbid1[:-1]), chain=row.pdbid1[-1],
-                                         partners=[(row.pdbid2, float(row.total))])
-                if row.pdbid2[-1] in node.strength:
-                    node.strength[row.pdbid2[-1]] += row.total
+        def __init__(self):
+            self.max_length = cm.get("peptide_generator.max_length")
+            self.reb_energy_cutoff = cm.get("peptide_generator.reb_energy_cutoff")
+            if self.reb_energy_cutoff > 0:
+                logging.warning(f"You have set a positive energy cutoff ({self.reb_energy_cutoff}) "
+                                f"- did you mean a negative value (attraction)?")
+            self.length_damping = cm.get("peptide_generator.length_damping")
+            if m := cm.get("peptide_generator.length_damping_mode"):
+                if m.upper() == "QUADRATIC":
+                    self.damping_func = self._damping_factor_quadratic
+                elif m.upper() == "LINEAR":
+                    self.damping_func = self._damping_factor_linear
                 else:
-                    node.strength[row.pdbid2[-1]] = row.total
-                seen[row.pdbid1] = node
-                nlist.append(node)
-                totals.append(row.total)
-            else:  # Update Node with parsed data
-                node = seen[row.pdbid1]
-                node.partners.append((row.pdbid2, float(row.total)))
-                totals.append(row.total)
-                if row.pdbid2[-1] in node.strength:
-                    node.strength[row.pdbid2[-1]] += row.total
-                else:
-                    node.strength[row.pdbid2[-1]] = row.total
-            continue
-        '''
-            if row.restype2 == "onebody":
-                if row.pdbid1[-1] in chains:
-                    chains[row.pdbid1[-1]].append([row.pdbid1, row.restype1])
-                else:
-                    chains[row.pdbid1[-1]] = [[row.pdbid1, row.restype1]]
-            else:
-                totals.append(row.total)
-                if row.pdbid1 in interactions:
-                    interactions[row.pdbid1].append([row.pdbid1, row.pdbid2, row.total, row.restype1])
-                    if row.pdbid2 in interactions:
-                        interactions[row.pdbid2].append([row.pdbid1, row.pdbid2, row.total, row.restype1])
-                    else:
-                        interactions[row.pdbid2] = [[row.pdbid1, row.pdbid2, row.total, row.restype1]]
-                else:
-                    interactions[row.pdbid1] = [[row.pdbid1, row.pdbid2, row.total, row.restype1]]
-                    if row.pdbid2 in interactions:
-                        interactions[row.row.pdbid2].append([row.pdbid1, row.pdbid2, row.total, row.restype1])
-                    else:
-                        interactions[row.pdbid2] = [[row.pdbid1, row.pdbid2, row.total, row.restype1]]
-        '''
-        # Update neighbors
-        for residueid, node in seen.items():
-            prev_id = str(int(residueid[:-1]) - 1) + residueid[-1]
-            if prev_id in seen:
-                node.neighbor_prev = seen[prev_id]
-            next_id = str(int(residueid[:-1]) + 1) + residueid[-1]
-            if next_id in seen:
-                node.neighbor_next = seen[next_id]
+                    logging.warning(f"Could not parse damping mode {m} for SelectionStrategy. "
+                                    f"Using default (QUADRATIC)...")
+                    self.damping_func = self._damping_factor_quadratic
+            self.ld_min_length = abs(cm.get("peptide_generator.fragment_joiner.length_damping_min_length"))
+            self.ld_max_length = abs(cm.get("peptide_generator.fragment_joiner.length_damping_max_length"))
+            self.ld_max_penalty = abs(cm.get("peptide_generator.fragment_joiner.length_damping_max_penalty"))
+            self.ld_initial_bonus = abs(cm.get("peptide_generator.fragment_joiner.length_damping_initial_bonus"))
+            self.ld_linear_stepping = cm.get("peptide_generator.fragment_joiner.length_damping_linear_stepping")
+            if self.ld_linear_stepping > 0:
+                logging.warning(f"You have set a positive stepping ({self.ld_linear_stepping}) "
+                                f"- did you perhaps mean a negative stepping (reduction of x% per step)?")
 
-        stats = {"mean": statistics.mean(totals),
-                 "stdev": statistics.stdev(totals),
-                 "min": min(totals),
-                 "max": max(totals)}
-        return nlist, stats
+        @abstractmethod
+        def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
+            raise NotImplementedError("Trying to use SelectionStrategy:reduce() from abstract base class!")
 
-    @dataclass
-    class Node:
-        _nodes = []
-        amino_acid: str = None
-        residue: int = None
-        chain: str = None
-        partners: List[tuple] = None  # (<partner residue id + chain id>, <interaction energy>)
-        strength: dict = field(default_factory=lambda: ({}))
-        neighbor_prev: REBprocessor.Node = None
-        neighbor_next: REBprocessor.Node = None
+        def _damping_factor_quadratic(self, peptide_length: int) -> float:
+            """
+            Returns the quadratic damping factor.
+            The damping factor is the value of a parabola open to the bottom, centered on the minimum length
+            with a maximum of the initial bonus. Any length before is equal to the initial bonus. Any length
+            after and including the max length is equal to the max penalty.
 
-        def __post_init__(self):
-            REBprocessor.Node._nodes.append(self)
+                            ∧ (damping factor)
+                            |
+            initial bonus   |---*______
+                            |          ‾‾‾‾----___
+                            |                     ‾‾--_
+            max penalty     |                          ‾*---------
+                            |
+            ----------------+---|-----------------------|----------> (peptide length)
+                            |   min length               max length
 
-        # FIXME: This is a bad idea if multiple files are analyzed, can't be differentiated from
-        #  where the multiple "19A" are from
-        @classmethod
-        def get(cls, residue_id: str) -> list:
-            return [node for node in cls._nodes if residue_id in node]
+            :param peptide_length: Length of the peptide, that the damping factor should be calculated for
+            :return: Quadratic damping factor
+            """
+            return max(self.ld_max_penalty,
+                       (-1 * (max(peptide_length, self.ld_min_length) - self.ld_min_length) ** 2) *
+                       max(0, (self.ld_initial_bonus - self.ld_max_penalty) /
+                           (max(self.ld_min_length + 0.1, self.ld_max_length) - self.ld_min_length) ** 2) +
+                       self.ld_initial_bonus)
 
-        def __contains__(self, item):
-            return item == str(self.residue) + self.chain
+        def _damping_factor_linear(self, peptide_length: int) -> float:
+            """
+            Returns the linear damping factor.
+            The damping factor is the initial bonus, discounted by the stepping for every residue above the min length,
+            up to the max length.
 
-        def __repr__(self):
-            return str(self.residue) + self.chain + " " + str(self.amino_acid)
+                            ∧ (damping factor)
+                            |
+            initial bonus  -|---*___                (The slope equals the stepping)
+                            |       ‾‾‾---___
+                            |                ‾‾‾---___
+            max penalty     |                         ‾‾‾*---------
+                            |
+            ----------------+---|------------------------|----------> (peptide length)
+                            |   min length               max length
 
-    def transform_interactions(self, chain: str, interactions: dict) -> list:
-        tally = []
-        prev_store = None
-        first = True
-        for index, item in enumerate(interactions.items()):
-            if item[0][-1] != chain:  # Ignore residues not on the submitted chain
-                continue
-            curr_node = None
-            total_energy = 0  # This is only the total interaction energy with residues on _other_ chains!
-            partners = []
-            for interaction in item[1]:
-                if interaction[1][-1].upper() == chain.upper():
-                    continue
-                total_energy += interaction[2]
-                partners.append((interaction[1], interaction[2]))
-            if len(partners) == 0:  # Ignore residues that only interact with their own chain
-                continue
-            if first:
-                curr_node = self.Node(amino_acid=item[1][0][3], residue=item[0], partners=partners,
-                                      strength=total_energy)
-                first = False
-            else:
-                if abs(int(item[0][:-1]) - int(prev_store.residue[:-1])) <= self.max_neighbor_distance:
-                    curr_node = self.Node(amino_acid=item[1][0][3], residue=item[0], partners=partners,
-                                          strength=total_energy, neighbor_prev=prev_store)
-                    tally[-1].neighbor_next = curr_node
-                else:
-                    curr_node = self.Node(amino_acid=item[1][0][3], residue=item[0], partners=partners,
-                                          strength=total_energy)
-            prev_store = curr_node
-            tally.append(curr_node)
-        return tally
 
-    def reduce(self, from_chain: str, to_chain: str, nodes: list) -> list:
+            :param peptide_length:
+            :return: Linear damping factor
+            """
+            return (self.ld_initial_bonus -
+                    min((max(0, peptide_length - self.ld_min_length)), self.ld_max_length) * self.ld_linear_stepping)
 
-        def _include(add_to: list, n: REBprocessor.Node, curr_depth: int = 0) -> None:
-            if False:  # cm.get("rosetta_config.custom_reb_func"):
-                custom_funcs.rosetta_energy_breakdown_node_inclusion(add_to, n, depth=curr_depth, REBproc=self)
-            else:
+    @final
+    class GreedyExpand(SelectionStrategy):
+
+        def __init__(self):
+            super().__init__()
+            self.always_include_direct_neighbors = cm.get(
+                "peptide_generator.greedy_expand.always_include_direct_neighbors")
+            self.max_side_extension = cm.get("peptide_generator.greedy_expand.max_side_extension")
+            self.ignore_neighbors = cm.get("peptide_generator.greedy_expand.ignore_neighbors")
+            self.custom_func = cm.get("peptide_generator.greedy_expand.custom_func")
+
+        def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
+            if not from_chain == nodes[0].chain:
+                raise ValueError(
+                    "Chains have not been properly defined, list of nodes does not correspond to from_chain.")
+
+            def _include(add_to: list, n: REBprocessor.Node, curr_depth: int = 0) -> None:
+                if self.custom_func:
+                    return custom_funcs.greedy_expand_node_inclusion(self, add_to, n, curr_depth)
                 if self.max_length == -1:
                     pass
                 elif len(add_to) > self.max_length or to_chain not in n.strength:
                     return
                 if self.always_include_direct_neighbors and curr_depth == 1:
                     add_to.append(n)
-                if n.strength.get(to_chain, 100000) < self.energy_cutoff and curr_depth <= self.max_side_extension or (
-                        self.always_include_direct_neighbors and curr_depth == 1):
+                damping_factor = self.damping_func(len(add_to)) if self.length_damping else 1
+                if (n.strength.get(to_chain, 10000000000) * damping_factor < self.reb_energy_cutoff
+                        and curr_depth <= self.max_side_extension
+                        or (self.always_include_direct_neighbors and curr_depth == 1)):
                     if n not in add_to:
                         add_to.append(n)
                     if self.ignore_neighbors:
@@ -214,8 +138,8 @@ class REBprocessor:
                     if nx := n.neighbor_next:
                         nxt = nx
                     if prev and nxt:
-                        if n.neighbor_prev.strength.get(to_chain, 100000) < n.neighbor_next.strength.get(to_chain,
-                                                                                                         100000):
+                        if (n.neighbor_prev.strength.get(to_chain, 10000000000) <
+                                n.neighbor_next.strength.get(to_chain, 10000000000)):
                             _include(add_to, n.neighbor_prev, curr_depth + 1)
                             _include(add_to, n.neighbor_next, curr_depth + 1)
                         else:
@@ -226,21 +150,142 @@ class REBprocessor:
                     elif nxt:
                         _include(add_to, n.neighbor_next, curr_depth + 1)
 
-        final_residues = []
-        elligible_nodes = [n for n in nlist if n.chain == from_chain and to_chain in n.strength]
-        if len(elligible_nodes) == 0:
-            logging.warning(
-                f"Couldn't determine any residues that interacted significantly according to the specifications. Exiting...")
-            sys.exit()
-        for residue in sorted(elligible_nodes, key=lambda node: node.strength[to_chain], reverse=False):
-            _include(final_residues, residue)
-        return sorted(final_residues, key=lambda node: node.residue, reverse=False)
+            final_residues = []
+            elligible_nodes = [n for n in nodes if n.chain == from_chain and to_chain in n.strength]
+            if len(elligible_nodes) == 0:
+                logging.warning(f"Couldn't determine any residues that interacted "
+                                f"significantly according to the specifications. Exiting...")
+                sys.exit(1)
+            for residue in sorted(elligible_nodes, key=lambda node: node.strength[to_chain], reverse=False):
+                _include(final_residues, residue)
+            return sorted(final_residues, key=lambda node: node.residue, reverse=False)
 
+    @final
+    class FragmentJoiner(SelectionStrategy):
 
-if __name__ == "__main__":
-    p = REBprocessor()
-    nlist, _ = p.read_in("energy_breakdown.out")
-    # nlist = p.transform_interactions("A", nlist)
+        def __init__(self):
+            super().__init__()
+            self.mode = ""
+            if cm.get("peptide_generator.fragment_joiner.use_abs_increase"):
+                self.mode += "A"  # Use absolute energy increase as criterion
+            if cm.get("peptide_generator.fragment_joiner.use_abs_increase"):
+                self.mode += "R"  # Use relative energy increase as criterion
+            if len(self.mode) == 2 and cm.get("peptide_generator.fragment_joiner.use_abs_increase"):
+                self.mode += "S"  # When using both, use strict mode (both need to increase)
+            self.min_abs_increase = cm.get("peptide_generator.fragment_joiner.min_abs_increase")
+            self.min_rel_increase = cm.get("peptide_generator.fragment_joiner.min_rel_increase")
+            if self.min_rel_increase >= 1:
+                logging.warning(f"You have set the minimum relative increase to something bigger than one - "
+                                f"did you perhaps mean {self.min_rel_increase - 1} for "
+                                f"a {(self.min_rel_increase - 1) * 100}% increase?")
+            self.lookahead = cm.get("peptide_generator.fragment_joiner.lookahead")
+            self.length_flexibility = cm.get("peptide_generator.fragment_joiner.length_flexibility")
+            self.fully_join_fragments = cm.get("peptide_generator.fragment_joiner.fully_join_fragments")
+            self.custom_func = cm.get("peptide_generator.fragment_joiner.custom_func")
 
-    result = p.reduce("A", "E", nlist)
-    input()
+        def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
+            if len(nodes) == 0:
+                raise ValueError("Passed an empty list of nodes!")
+            if not from_chain == nodes[0].chain:
+                raise ValueError(
+                    "Chains have not been properly defined, list of nodes does not correspond to from_chain.")
+
+            def _include(n: REBprocessor.Node, curr_strength: float, add_to_strength: float = 0, curr_length: int = 0,
+                         ignore_cutoff: bool = True) -> bool:
+
+                damping_factor = self.damping_func(curr_length) if self.length_damping else 1
+                if self.custom_func:
+                    return custom_funcs.fragment_joiner_node_inclusion(self, n, curr_strength, add_to_strength,
+                                                                       curr_length, ignore_cutoff, damping_factor)
+                abs_criterion = False
+                rel_criterion = False
+                node_strength = n.strength.get(to_chain, 10000000000)
+                if node_strength == 0:  # Safety fallback, normally this shouldn't be encountered
+                    node_strength = 0.00000001
+                if "A" in self.mode and (ignore_cutoff or node_strength < self.reb_energy_cutoff):  # absolute increase
+                    if add_to_strength + (node_strength * damping_factor) < self.min_abs_increase:
+                        abs_criterion = True
+                if "R" in self.mode and (ignore_cutoff or node_strength < self.reb_energy_cutoff):  # relative increase
+                    new_strength = curr_strength + add_to_strength + (node_strength * damping_factor)
+                    diff = curr_strength - new_strength
+                    rel_change = diff / curr_strength
+                    # We need to invert the % change if we're starting from a positive strength value,
+                    # so that decreasing the strength value is good (positive change)
+                    rel_change *= -1 if curr_strength > 0 else 1
+                    if rel_change >= self.min_rel_increase:
+                        rel_criterion = True
+                return (("S" in self.mode and abs_criterion and rel_criterion) or  # Strict mode, both have to increase
+                        ("S" not in self.mode and (abs_criterion or rel_criterion)))
+
+            fragments = {}
+            curr_fragment = []
+            lookahead_buffer = []
+            fragment_strength = -0.00000001  # Need to start with an epsilon, otherwise div/0 error in include
+
+            # Forward scan
+            for residue_index in range(len(nodes)):
+                if nodes[residue_index] in curr_fragment:  # Already added to current fragment
+                    continue
+                if to_chain not in nodes[residue_index].strength:  # Residue does not interact with target chain
+                    continue
+
+                added_residue = False
+                lookahead_strength_buf = 0.0
+                for i in range(self.lookahead + 1):
+                    if residue_index + i > len(nodes):  # Don't lookahead past end of list
+                        break
+                    # Do we add the current residue to our fragment?
+                    if _include(nodes[residue_index + i], curr_strength=fragment_strength,
+                                add_to_strength=lookahead_strength_buf,
+                                curr_length=len(curr_fragment) + len(lookahead_buffer)):
+                        added_residue = True
+                        curr_fragment += lookahead_buffer
+                        curr_fragment.append(nodes[residue_index + i])
+                        fragment_strength += nodes[residue_index].strength.get(to_chain, 10000000000)
+                        break
+                    else:  # Temporarily store current residue and look ahead
+                        lookahead_strength_buf += nodes[residue_index + i].strength.get(to_chain, 10000000000)
+                        lookahead_buffer.append(nodes[residue_index + i])
+                lookahead_buffer = []
+                if added_residue:  # During lookahead we added residue, we may proceed with current fragment
+                    continue
+                else:
+                    if len(curr_fragment) > 0:
+                        # We have a fragment and didn't find a suitable addition to the fragment during lookahead
+                        fragments[str(curr_fragment[0].residue) + curr_fragment[0].chain] = \
+                            (curr_fragment, fragment_strength)  # Save current fragment with aggregate energy
+                        curr_fragment = []
+                        fragment_strength = -0.00000001
+
+            # TODO: Improve upon simple, greedy strategy?
+            #  Knapsack problem, how to fit fragments with strength ang length into max_length?
+            #  If close to max, consider only adding subsequence of fragment? How to select?
+            final_peptide = []
+
+            def _get_strength(entry: tuple) -> float:
+                return entry[1]
+
+            for k, fragment in sorted(fragments.items(), key=_get_strength, reverse=False):
+                stop = False
+                for residue in fragment[0]:
+                    if not self.fully_join_fragments and len(final_peptide) > self.max_length + self.length_flexibility:
+                        stop = True
+                        break
+                    else:
+                        final_peptide.append(residue)
+                if stop:
+                    break
+
+            return final_peptide
+
+    @staticmethod
+    def _get_strategy(strategy: str = None) -> Type[_SelectionStrategies.SelectionStrategy]:
+        strat = strategy.upper() if strategy else cm.get("peptide_generator.use_strategy")
+        if cm.get("peptide_generator.custom_strategy"):
+            return custom_funcs.CustomSelectionStrategy
+        if strat == "GREEDYEXPAND" or strat == "GREEDY_EXPAND":
+            return _SelectionStrategies.GreedyExpand
+        elif strat == "FRAGMENTJOINER" or strat == "FRAGMENT_JOINER":
+            return _SelectionStrategies.FragmentJoiner
+        else:  # Default is FragmentJoiner strategy
+            return _SelectionStrategies.FragmentJoiner

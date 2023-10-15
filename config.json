@@ -21,5 +21,36 @@
   "gromacs_config": {
     "path": "",
     "random_seed": 0
+  },
+  "peptide_generator": {
+    "use_strategy": "fragment_joiner",
+    "linking_strategy": "polyglycine",
+    "max_length": 20,
+    "reb_energy_cutoff": -0.01,
+    "length_damping": false,
+    "length_damping_mode": "quadratic",
+    "length_damping_min_length": 3,
+    "length_damping_max_length": 10,
+    "length_damping_initial_bonus": 1.2,
+    "length_damping_max_penalty": 0.5,
+    "length_damping_linear_stepping": -0.05,
+    "custom_strategy": false,
+    "greedy_expand": {
+      "max_side_extension": 2,
+      "ignore_neighbors": false,
+      "always_include_direct_neighbors": false,
+      "custom_func": false
+    },
+    "fragment_joiner": {
+      "use_abs_increase": true,
+      "use_rel_increase": false,
+      "mixed_mode_strict": false,
+      "min_abs_increase": -0.05,
+      "min_rel_increase": 0.1,
+      "lookahead": 2,
+      "length_flexibility": 3,
+      "fully_join_fragments": false,
+      "custom_func": false
+    }
   }
 }

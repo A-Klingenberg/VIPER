@@ -8,6 +8,7 @@ import json
 import logging
 import os.path
 import sys
+from pathlib import Path
 from pprint import pformat
 from typing import Optional, Any
 
@@ -81,16 +82,6 @@ class ConfigManager(metaclass=_Singleton):
                 # Note: Permissive is true by default
                 print(f"Trying to continue with just command line arguments - this might cause errors down the line!")
 
-        # Set results path
-        p = None
-        if "results_path" in self.file_config.keys() and self.file_config["results_path"] is not None:
-            p = self.file_config["results_path"]
-        if "results_path" in self.command_args.keys() and self.command_args["results_path"] is not None:
-            p = self.command_args["results_path"]
-        if p is None:
-            p = "output"  # Fallback
-        self.results_path = os.path.join(self.program_path, p) + os.sep
-
         # Initialize main logger
         if lp := self.get("log_path"):
             self.log_path = os.path.normpath(self.program_path + lp) + os.sep
@@ -111,6 +102,30 @@ class ConfigManager(metaclass=_Singleton):
                                 format="%(asctime)s [%(levelname)s] (%(filename)s:%(module)s): %(message)s",
                                 force=True)
         self.log_config()
+
+        # Set results path
+        p = None
+        if "results_path" in self.file_config.keys() and self.file_config["results_path"] is not None:
+            p = self.file_config["results_path"]
+        if "results_path" in self.command_args.keys() and self.command_args["results_path"] is not None:
+            p = self.command_args["results_path"]
+        if p is None:
+            p = "output"  # Fallback
+        self.results_path = os.path.join(self.program_path, p) + os.sep
+
+        # Validate Rosetta path
+        if r := self.get("rosetta_config.path"):
+            # Try to fix path if it hasn't been set to the /main/source/bin/
+            apps = [p.resolve() for p in Path(r).glob("**/*") if
+                    (".mpi." in p.name or ".default." in p.name) and ("release" in p.name or "debug" in p.name)]
+            if len(apps) == 0:
+                if self.get("permissive"):
+                    logging.warning(f"Could not find any Rosetta executables in the path you provided! ({r}) "
+                                    f"If you continue anyway and try to use Rosetta apps, you will likely crash!")
+                else:
+                    logging.critical(
+                        f"Could not find any Rosetta executables in the path you provided! ({r}) - Aborting...")
+                    sys.exit(1)
 
     def get(self, setting: str) -> Optional[Any]:
         """
@@ -146,4 +161,3 @@ class ConfigManager(metaclass=_Singleton):
         if self.command_args:
             logging.info(f"---------- [ COMMAND LINE ARGUMENTS ] ----------")
             logging.info(pformat(self.command_args))
-
