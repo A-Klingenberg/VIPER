@@ -202,6 +202,8 @@ class _SelectionStrategies:
                 node_strength = n.strength.get(to_chain, 10000000000)
                 if node_strength == 0:  # Safety fallback, normally this shouldn't be encountered
                     node_strength = 0.00000001
+                if curr_strength == 0:  # Safety fallback, normally this shouldn't be encountered
+                    curr_strength = 0.00000001
                 if "A" in self.mode and (ignore_cutoff or node_strength < self.reb_energy_cutoff):  # absolute increase
                     if add_to_strength + (node_strength * damping_factor) < self.min_abs_increase:
                         abs_criterion = True
@@ -210,7 +212,7 @@ class _SelectionStrategies:
                     diff = curr_strength - new_strength
                     rel_change = diff / curr_strength
                     # We need to invert the % change if we're starting from a positive strength value,
-                    # so that decreasing the strength value is good (positive change)
+                    # so that decreasing the strength value is good (positive percentage)
                     rel_change *= -1 if curr_strength > 0 else 1
                     if rel_change >= self.min_rel_increase:
                         rel_criterion = True
