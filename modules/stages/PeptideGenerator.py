@@ -69,8 +69,8 @@ class _SelectionStrategies:
             """
             Returns the quadratic damping factor.
             The damping factor is the value of a parabola open to the bottom, centered on the minimum length
-            with a maximum of the initial bonus. Any length before is equal to the initial bonus. Any length
-            after and including the max length is equal to the max penalty.
+            with a maximum of the initial bonus. Any length before the minimum length is equal to the initial multiplier.
+            Any length after and including the max length is equal to the final multiplier.
 
                             ∧ (damping factor)
                             |
@@ -95,8 +95,8 @@ class _SelectionStrategies:
             """
             Returns the quadratic damping factor.
             The damping factor is the value of a parabola centered on the minimum length with a maximum of the initial
-            bonus. Any length before is equal to the initial bonus. Any length after and including the max length is
-            equal to the max penalty.
+            bonus. Any length before the minimum length is equal to the initial multiplier. Any length after and
+            including the max length is equal to the final multiplier.
 
                             ∧ (damping factor)
                             |
