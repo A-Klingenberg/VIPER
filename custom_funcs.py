@@ -1,6 +1,10 @@
+from __future__ import annotations
+
+import typing
 from typing import List
 
-import modules.stages.PeptideGenerator
+if typing.TYPE_CHECKING:
+    import modules.stages.PeptideGenerator
 
 
 def greedy_expand_node_inclusion(config: modules.stages.PeptideGenerator._SelectionStrategies.GreedyExpand,
@@ -10,8 +14,8 @@ def greedy_expand_node_inclusion(config: modules.stages.PeptideGenerator._Select
 
 
 def fragment_joiner_node_inclusion(config: modules.stages.PeptideGenerator._SelectionStrategies.FragmentJoiner,
-                                   n: modules.stages.PeptideGenerator.REBprocessor.Node, curr_strength: float,
-                                   add_to_strength: float = 0, curr_length: int = 0,
+                                   n: modules.stages.PeptideGenerator.REBprocessor.Node, to_chain: str,
+                                   curr_strength: float, add_to_strength: float = 0, curr_length: int = 0,
                                    ignore_cutoff: bool = True, damping_factor: float = 1) -> bool:
     return NotImplemented
 

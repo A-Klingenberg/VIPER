@@ -4,7 +4,6 @@ Main file for VIPER.
 import argparse
 import os
 
-import util.PDBtool
 from ConfigManager import ConfigManager
 
 configmanager: ConfigManager = None
@@ -17,7 +16,8 @@ def parse_args() -> argparse.Namespace:
                                     "cell surface protein", type=str)
     parser.add_argument("--config", help="The path to a config file", type=str)
     parser.add_argument("--log_path", help="The path to where log files should be written", type=str)
-    parser.add_argument("--results_path", help="The path to where the results of all files should be written", type=str, default="output")
+    parser.add_argument("--results_path", help="The path to where the results of all files should be written", type=str,
+                        default="output")
     parser.add_argument("--verbose", help="Set this flag to log additional information", type=bool, default=False)
     parser.add_argument("--permissive", help="Set this flag to have VIPER continue running even if it encounters "
                                              "problems which might lead to unexpected behaviour", type=bool,
@@ -49,7 +49,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     global configmanager
-    configmanager = ConfigManager(args=args, base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
+    configmanager = ConfigManager(force=True, args=args,
+                                  base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
 
 
 if __name__ == "__main__":
