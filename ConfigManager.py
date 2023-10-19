@@ -19,9 +19,17 @@ class _Singleton(type):
     _instances = {}
 
     def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
+        force = kwargs.pop("force", False)
+        if cls not in cls._instances or force:
             cls._instances[cls] = super(_Singleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
+
+    def get_cm(cls):
+        if c := cls._instances.get(cls, None):
+            return c
+        else:
+            print("Trying to use ConfigManager before it has been initialized!")
+            raise RuntimeError("Trying to use ConfigManager before it has been initialized!")
 
 
 class ConfigManager(metaclass=_Singleton):
@@ -63,7 +71,10 @@ class ConfigManager(metaclass=_Singleton):
                 def flatten_level(d: dict, add_to: dict, prefix: str = None) -> None:
                     for k, v in d.items():
                         if isinstance(v, dict):
-                            flatten_level(v, add_to, prefix=f"{str(k)}.")
+                            if prefix:
+                                flatten_level(v, add_to, prefix=prefix + f"{str(k)}.")
+                            else:
+                                flatten_level(v, add_to, prefix=f"{str(k)}.")
                         else:
                             if prefix:
                                 add_to[f"{prefix}{str(k)}"] = v
@@ -105,9 +116,9 @@ class ConfigManager(metaclass=_Singleton):
 
         # Set results path
         p = None
-        if "results_path" in self.file_config.keys() and self.file_config["results_path"] is not None:
+        if self.file_config and "results_path" in self.file_config.keys() and self.file_config["results_path"] is not None:
             p = self.file_config["results_path"]
-        if "results_path" in self.command_args.keys() and self.command_args["results_path"] is not None:
+        if self.command_args and "results_path" in self.command_args.keys() and self.command_args["results_path"] is not None:
             p = self.command_args["results_path"]
         if p is None:
             p = "output"  # Fallback
