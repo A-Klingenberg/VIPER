@@ -10,12 +10,13 @@ import sys
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-from typing import Union, List
+from typing import Union, List, final
 
 import pandas as pd
 
 from ConfigManager import ConfigManager
-from VIPER import configmanager as cm
+
+cm = ConfigManager.get_cm
 
 
 class RosettaWrapper:
@@ -25,7 +26,7 @@ class RosettaWrapper:
     def __init__(self, config: ConfigManager = None):
 
         # Initialize apps
-        if r := cm.get("rosetta_config.path"):
+        if r := cm().get("rosetta_config.path"):
             # TODO: This might be fairly slow. Defer loading to (non-blocking) background process and continue?
             logging.info(f"Loading Rosetta apps...")
             app_paths = [p.resolve() for p in Path(r).glob("**/*") if
@@ -41,8 +42,8 @@ class RosettaWrapper:
                     self.apps[components[0]] = str(app)
 
         # Make directories
-        self.base_path = os.path.join(cm.get("results_path"),
-                                      os.path.normpath(cm.get("rosetta_config.path_out"))) + os.sep
+        self.base_path = os.path.join(cm().get("results_path"),
+                                      os.path.normpath(cm().get("rosetta_config.path_out"))) + os.sep
         os.makedirs(self.base_path, exist_ok=True)
         os.makedirs(self.base_path + "run_configs", exist_ok=True)
         os.makedirs(self.base_path + "docking", exist_ok=True)
@@ -54,7 +55,7 @@ class RosettaWrapper:
     def make_options_file(filename: str, options: dict) -> None:
         # Compare: https://www.rosettacommons.org/docs/latest/full-options-list
         logging.info(f"Making run config {filename}...")
-        with open(os.path.join(cm.get("results_path"), os.path.normpath(cm.get("rosetta_config.path_out")),
+        with open(os.path.join(cm().get("results_path"), os.path.normpath(cm().get("rosetta_config.path_out")),
                                "run_configs") + os.sep + filename, "w") as out:
             for option, value in options.items():
                 out.write(str(option) + " " + str(value) + "\n")
@@ -98,7 +99,7 @@ class RosettaWrapper:
                 if pdb:
                     flag[k] = os.path.normpath(pdb)
                 else:
-                    flag[k] = cm.get("PDB")
+                    flag[k] = cm().get("PDB")
                 continue
             if "-out:file" in k and v is not None:
                 if "relax" in flag["app"]:
@@ -113,10 +114,10 @@ class RosettaWrapper:
                     flag[k] = os.path.join(self.base_path, "refine", flag[k])
                 continue
             if "-run:constant_seed" in k and v is not None:
-                flag[k] = cm.get("rosetta_config.random_seed")
+                flag[k] = cm().get("rosetta_config.random_seed")
                 continue
             if "-nstruct" in k and v is not None:
-                flag[k] = cm.get("rosetta_config.relax_protein_runs")
+                flag[k] = cm().get("rosetta_config.relax_protein_runs")
                 continue
         return flag
 
@@ -170,7 +171,7 @@ class REBprocessor:
                 continue
             # Create Node and parse data
             if row.pdbid1 not in seen:
-                node = REBprocessor.Node(amino_acid=row.restype1, residue=int(row.pdbid1[:-1]), chain=row.pdbid1[-1],
+                node = REBprocessor.Node(amino_acid=row.restype1, residue_id=int(row.pdbid1[:-1]), chain=row.pdbid1[-1],
                                          partners=[(row.pdbid2, float(row.total))])
                 if row.pdbid2[-1] in node.strength:
                     node.strength[row.pdbid2[-1]] += row.total
@@ -204,18 +205,52 @@ class REBprocessor:
                  "max": max(totals)}
         return nlist, stats
 
+    @final
     @dataclass
     class Node:
         amino_acid: str = None
-        residue: int = None
+        residue_id: int = None
         chain: str = None
         partners: List[tuple] = None  # (<partner residue id + chain id>, <interaction energy>)
         strength: dict = field(default_factory=lambda: ({}))
         neighbor_prev: REBprocessor.Node = None
         neighbor_next: REBprocessor.Node = None
 
+        @staticmethod
+        def get_neighbors(n: REBprocessor.Node, length: int, direction: int = 0, curr_depth: int = 0):
+            if curr_depth > length or n is None:
+                return None
+            if direction < 0:
+                if p := REBprocessor.Node.get_neighbors(n.neighbor_prev, length, direction, curr_depth + 1):
+                    return p + [n]
+                else:
+                    return [n]
+            if direction > 0:
+                if nex := REBprocessor.Node.get_neighbors(n.neighbor_next, length, direction, curr_depth + 1):
+                    return [n] + nex
+                else:
+                    return [n]
+            if direction == 0:  # Initialize
+                buf = [n]
+                if p := REBprocessor.Node.get_neighbors(n.neighbor_prev, length, -1, curr_depth + 1):
+                    buf = p + buf
+                if n := REBprocessor.Node.get_neighbors(n.neighbor_next, length, 1, curr_depth + 1):
+                    buf = buf + n
+                return buf
+
         def __contains__(self, item):
-            return item == str(self.residue) + self.chain
+            return item == str(self.residue_id) + self.chain
 
         def __repr__(self):
-            return str(self.residue) + self.chain + " " + str(self.amino_acid)
+            return str(self.residue_id) + self.chain + " " + str(self.amino_acid)
+
+        def __int__(self):
+            """
+            This returns the residue id!
+
+            :return: residue id
+            """
+            return self.residue_id
+
+        def __str__(self):
+            return str(self.residue_id) + self.chain
