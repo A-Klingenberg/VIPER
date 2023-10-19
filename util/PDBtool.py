@@ -3,18 +3,20 @@
 
 import logging
 import os
-import sys
 import statistics
+import sys
 from math import sqrt
-from typing import Optional, List
+from typing import Optional, List, Union, Tuple
 
 import Bio
 import numpy as np
 from Bio import Align, pairwise2
 from scipy.spatial.transform import Rotation
 from sklearn.decomposition import PCA
+from sklearn.neighbors import KDTree
 
 from VIPER import configmanager as cm
+from modules.wrappers.RosettaWrapper import REBprocessor
 
 TOOL_VER = "2.0"
 
@@ -955,3 +957,152 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
                         w.write(temp_line)
                 else:
                     w.write(line)
+
+
+def get_dist_centroid(pdb: str, first: List[Union[int, REBprocessor.Node]],
+                      second: List[Union[int, REBprocessor.Node]], resolution_total: bool = True) -> Union[
+    float, Tuple[float, int, int]]:
+    """
+    Returns the distance between the centroid of the first and second list of residues.
+
+    :param pdb: The path to the PDB to be read
+    :param first: List of residue ids
+    :param second: List of residue ids
+    :param resolution_total: Whether to consider the aggregate centroid of all residues in one list,
+            or consider the centroid of each residue itself
+    :return: The distance between the centroid of the first and second list of residues
+    """
+    if len(first) == 0 or len(second) == 0:
+        if cm.get("permissive"):
+            return 0.0
+        else:
+            raise ValueError("Can't pass empty list to avg distance function.")
+    first_ids = []
+    second_ids = []
+    for entry in first:
+        first_ids.append(int(entry))
+    for entry in second:
+        second_ids.append(int(entry))
+    x_avg1, y_avg1, z_avg1, x_avg2, y_avg2, z_avg2 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    num1, num2 = 0, 0
+    last_seen = -1
+    centroid_dict1 = {}
+    centroid_dict2 = {}
+    with open(pdb, "r") as read:
+        for line in read:
+            if line[0:6] != "ATOM  ":
+                continue
+            else:
+                residue_number = int(line[section_residue_number[0]:section_residue_number[1]])
+                if residue_number != last_seen:
+                    last_seen = residue_number
+                if residue_number in first_ids:
+                    if not resolution_total:
+                        if c := centroid_dict1.get(str(residue_number), None):
+                            c[0] += float(line[section_x[0]:section_x[1]])
+                            c[1] += float(line[section_y[0]:section_y[1]])
+                            c[2] += float(line[section_z[0]:section_z[1]])
+                            c[3] += 1
+                        else:
+                            centroid_dict1[str(residue_number)] = [float(line[section_x[0]:section_x[1]]),
+                                                                   float(line[section_y[0]:section_y[1]]),
+                                                                   float(line[section_z[0]:section_z[1]]),
+                                                                   1]
+                    else:
+                        num1 += 1
+                        x_avg1 += float(line[section_x[0]:section_x[1]])
+                        y_avg1 += float(line[section_y[0]:section_y[1]])
+                        z_avg1 += float(line[section_z[0]:section_z[1]])
+                elif residue_number in second_ids:
+                    if not resolution_total:
+                        if c := centroid_dict2.get(str(residue_number), None):
+                            c[0] += float(line[section_x[0]:section_x[1]])
+                            c[1] += float(line[section_y[0]:section_y[1]])
+                            c[2] += float(line[section_z[0]:section_z[1]])
+                            c[3] += 1
+                        else:
+                            centroid_dict2[str(residue_number)] = [float(line[section_x[0]:section_x[1]]),
+                                                                   float(line[section_y[0]:section_y[1]]),
+                                                                   float(line[section_z[0]:section_z[1]]),
+                                                                   1]
+                    else:
+                        num2 += 1
+                        x_avg2 += float(line[section_x[0]:section_x[1]])
+                        y_avg2 += float(line[section_y[0]:section_y[1]])
+                        z_avg2 += float(line[section_z[0]:section_z[1]])
+    if resolution_total:
+        return sqrt((x_avg1 / num1 - x_avg2 / num2) ** 2 +
+                    (y_avg1 / num1 - y_avg2 / num2) ** 2 +
+                    (z_avg1 / num1 - z_avg2 / num2) ** 2)
+    else:
+        # TODO: Is this faster with a k-d tree?
+        dists = []
+        for res1, centroid1 in centroid_dict1.items():
+            for res2, centroid2 in centroid_dict2.items():
+                dists.append([sqrt((centroid1[0] / centroid1[3] - centroid2[0] / centroid2[3]) ** 2 +
+                                   (centroid1[1] / centroid1[3] - centroid2[1] / centroid2[3]) ** 2 +
+                                   (centroid1[2] / centroid1[3] - centroid2[2] / centroid2[3]) ** 2),
+                              res1, res2])
+        closest_centroids = min(dists, key=lambda d: d[0])
+        return closest_centroids[0], int(closest_centroids[1]), int(closest_centroids[2])
+
+
+_tree_cache = {}
+
+
+def get_dist_closest_atom(pdb: str, first: List[Union[int, REBprocessor.Node]],
+                          second: List[Union[int, REBprocessor.Node]]) -> Tuple[float, int, int]:
+    """
+    Returns the distance between the closest two atoms of the closest two residues in first and second.
+
+    :param pdb: The path to the PDB to be read
+    :param first: A list of residue ids
+    :param second: A list of residue ids
+    :return: (closest distance, residue 1, residue 2)
+    """
+    if len(first) == 0 or len(second) == 0:
+        if cm.get("permissive"):
+            return 0.0, 0, 0
+        else:
+            raise ValueError("Can't pass empty list to avg distance function.")
+    first_ids = []
+    second_ids = []
+    for entry in first:
+        first_ids.append(int(entry))
+    for entry in second:
+        second_ids.append(int(entry))
+
+    use_tree = _tree_cache.get(frozenset(first_ids), None)
+    if len(_tree_cache) > 20:  # Free up memory
+        _tree_cache.clear()
+
+    points_first = []
+    points_second = []
+    with open(pdb, "r") as read:
+        for line in read:
+            if line[0:6] != "ATOM  ":
+                continue
+            else:
+                residue_number = int(line[section_residue_number[0]:section_residue_number[1]])
+                if residue_number in first_ids:
+                    points_first.append([float(line[section_x[0]:section_x[1]]),
+                                         float(line[section_y[0]:section_y[1]]),
+                                         float(line[section_z[0]:section_z[1]]),
+                                         residue_number])
+                elif residue_number in second_ids:
+                    points_second.append([float(line[section_x[0]:section_x[1]]),
+                                          float(line[section_y[0]:section_y[1]]),
+                                          float(line[section_z[0]:section_z[1]]),
+                                          residue_number])
+    if use_tree is None:
+        use_tree = KDTree([p[0:-1] for p in points_first])
+        _tree_cache[frozenset(first_ids)] = use_tree
+
+    distances, neighbor_indices = use_tree.query([p[0:-1] for p in points_second], k=1)
+    closest = distances.min()
+    distances, neighbor_indices = distances.tolist(), neighbor_indices.tolist()
+
+    idx_second = distances.index(closest)
+    idx_first = neighbor_indices[idx_second][0]
+
+    return closest, points_first[idx_first][-1], points_second[idx_second][-1]
