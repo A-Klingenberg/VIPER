@@ -18,6 +18,8 @@ class PeptideGenerator:
     #  Which residues consistently interact the strongest?
     # Use constraints file to pin those residues (movemap?)
     # Resfile PIKAA + amino acid letter
+    #
+    # https://www.rosettacommons.org/docs/latest/application_documentation/design/mpi-msd
     pass
 
 
@@ -28,20 +30,19 @@ class _SelectionStrategies:
         """
 
         def __init__(self):
-            cm = ConfigManager()
-            self.max_length = cm.get("peptide_generator.max_length")
-            self.reb_energy_cutoff = cm.get("peptide_generator.reb_energy_cutoff")
-            self.linker = cm.get("peptide_generator.linker")
+            self.max_length = cm().get("peptide_generator.max_length")
+            self.reb_energy_cutoff = cm().get("peptide_generator.reb_energy_cutoff")
+            self.linker = cm().get("peptide_generator.linker")
             if self.reb_energy_cutoff > 0:
                 logging.warning(f"You have set a positive energy cutoff ({self.reb_energy_cutoff}) "
                                 f"- did you mean a negative value (attraction)?")
-            self.length_damping = cm.get("peptide_generator.length_damping")
-            self.ld_min_length = abs(cm.get("peptide_generator.length_damping_min_length"))
-            self.ld_max_length = abs(cm.get("peptide_generator.length_damping_max_length"))
-            self.ld_initial_mult = abs(cm.get("peptide_generator.length_damping_initial_bonus"))
-            self.ld_final_mult = abs(cm.get("peptide_generator.length_damping_max_penalty"))
-            self.ld_linear_stepping = cm.get("peptide_generator.length_damping_linear_stepping")
-            if m := cm.get("peptide_generator.length_damping_mode"):
+            self.length_damping = cm().get("peptide_generator.length_damping")
+            self.ld_min_length = abs(cm().get("peptide_generator.length_damping_min_length"))
+            self.ld_max_length = abs(cm().get("peptide_generator.length_damping_max_length"))
+            self.ld_initial_mult = abs(cm().get("peptide_generator.length_damping_initial_bonus"))
+            self.ld_final_mult = abs(cm().get("peptide_generator.length_damping_max_penalty"))
+            self.ld_linear_stepping = cm().get("peptide_generator.length_damping_linear_stepping")
+            if m := cm().get("peptide_generator.length_damping_mode"):
                 if m.upper() == "QUADRATIC":
                     if self.ld_initial_mult > self.ld_final_mult:
                         self.damping_func = self._damping_factor_quadratic_penalty
@@ -69,8 +70,8 @@ class _SelectionStrategies:
             """
             Returns the quadratic damping factor.
             The damping factor is the value of a parabola open to the bottom, centered on the minimum length
-            with a maximum of the initial bonus. Any length before the minimum length is equal to the initial multiplier.
-            Any length after and including the max length is equal to the final multiplier.
+            with a maximum of the initial bonus. Any length before the minimum length is equal to the initial
+            multiplier. Any length after and including the max length is equal to the final multiplier.
 
                             ∧ (damping factor)
                             |
