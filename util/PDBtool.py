@@ -15,8 +15,10 @@ from scipy.spatial.transform import Rotation
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KDTree
 
-from VIPER import configmanager as cm
 from modules.wrappers.RosettaWrapper import REBprocessor
+from ConfigManager import ConfigManager
+
+cm = ConfigManager.get_cm
 
 TOOL_VER = "2.0"
 
@@ -65,7 +67,7 @@ def get_chains(pdb: str) -> Optional[list]:
     logging.debug(f"Got chains '{chains}'")
     if len(chains) == 0:
         logging.error(f"Couldn't find any chain in '{pdb}'!")
-        if cm.get("permissive"):
+        if cm().get("permissive"):
             return None
         else:
             sys.exit(1)
@@ -100,18 +102,19 @@ def get_amino_acids_on_chain(pdb: str, chain: str) -> str:
     logging.debug(f"Got following sequence: '{output}'")
     if len(output) == 0:
         logging.error(f"Couldn't find any amino acid in chain '{chain}' in '{pdb}'!")
-        if not cm.get("permissive"):
+        if not cm().get("permissive"):
             sys.exit(1)
     return output
 
 
-def three_to_one(three: str) -> str:
+def three_to_one(three: str, default: str = "") -> str:
     """
     Converts three letter amino acid abbreviation to single letter abbreviation.
 
     :param three: Three letter amino acid abbreviation
-    :return: Single letter amino acid abbreviation, or ' ' if input abbreviation is not recognized and VIPER is running
-        in permissive mode.
+    :param default: Which optional string to return if the three letter abbreviation is not recognized
+    :return: Single letter amino acid abbreviation, or '' or optional default if input abbreviation is not recognized
+        and VIPER is running in permissive mode.
     """
     translate = {
         'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'ASX': 'B', 'CYS': 'C', 'GLU': 'E',
@@ -123,16 +126,20 @@ def three_to_one(three: str) -> str:
         return translate[three.upper()]
     else:
         logging.log(logging.WARN, f"Tried to convert '{three}' to single letter amino acid abbreviation but failed!")
-        return " "
+        if default:
+            return default
+        else:
+            return ""
 
 
-def one_to_three(one: str) -> str:
+def one_to_three(one: str, default: str = "   ") -> str:
     """
     Converts three letter amino acid to single letter abbreviation.
 
     :param one: One letter amino acid abbreviation
-    :return: Three letter amino acid abbreviation. If the one letter amino acid abbreviation is not recognized, an VIPER
-        is run in permissive mode, return '   ', otherwise stop program.
+    :param default: Which optional string to return if the one letter abbreviation is not recognized
+    :return: Three letter amino acid abbreviation, or '   ' or optional default if the one letter amino acid
+        abbreviation is not recognized, and VIPER is run in permissive mode.
     """
     translate = {
         'A': 'ALA', 'R': 'ARG', 'N': 'ASN', 'D': 'ASP', 'B': 'ASX', 'C': 'CYS', 'E': 'GLU',
@@ -144,7 +151,10 @@ def one_to_three(one: str) -> str:
         return translate[one.upper()]
     else:
         logging.log(logging.WARN, f"Tried to convert '{one}' to three letter amino acid abbreviation but failed!")
-        return "   "
+        if default:
+            return default
+        else:
+            return "   "
 
 
 def first_atom_on_chain(pdb: str, chain: str) -> Optional[dict]:
@@ -176,7 +186,7 @@ def first_atom_on_chain(pdb: str, chain: str) -> Optional[dict]:
                     logging.log(logging.DEBUG, f"Found following atom: {atom}")
                     return atom
         logging.error(f"Couldn't find first atom on chain '{chain}' in '{pdb}'!")
-        if cm.get("permissive"):
+        if cm().get("permissive"):
             return None
         else:
             sys.exit(1)
@@ -211,7 +221,7 @@ def get_atom(pdb: str, atom_num: int) -> Optional[dict]:
                     logging.log(logging.DEBUG, f"Found following atom: {atom}")
                     return atom
         logging.error(f"Couldn't locate atom number {atom_num} from '{pdb}'!")
-        if cm.get("permissive"):
+        if cm().get("permissive"):
             return None
         else:
             sys.exit(1)
@@ -247,7 +257,7 @@ def get_atoms_on_chain(pdb: str, chain: str) -> list:
                     atoms.append(atom)
     if len(atoms) == 0:
         logging.error(f"Tried to get atoms on chain '{chain}' from '{pdb}' but failed!")
-        if not cm.get("permissive"):
+        if not cm().get("permissive"):
             sys.exit(1)
     else:
         logging.debug(f"Atoms on chain '{chain}' are {atoms}.")
@@ -270,7 +280,7 @@ def euclidean_of_atoms(pdb: str, atom_num_1: int, atom_num_2: int) -> Optional[f
     if atom_1 is None or atom_2 is None:
         logging.error(
             f"Tried to compute euclidean distance between atom {atom_num_1} and {atom_num_2} in '{pdb}' but failed!")
-        if cm.get("permissive"):
+        if cm().get("permissive"):
             return None
         else:
             sys.exit(1)
@@ -288,6 +298,12 @@ def rebuild_atom_line(atoms: list) -> str:
     :param atoms: List atom-type dicts (see get_atom())
     :return: Lines in a PDB corresponding to passed atom
     """
+    if len(atoms) == 0:
+        if cm().get("permissive"):
+            return ""
+        else:
+            raise ValueError("Can't rebuild empty list!")
+    last_chain = atoms[0]["chain_id"]
     output = ""
     for atom in atoms:
         line = 'ATOM  ' + str(atom['atom_num']).rjust(5) + "  " + atom['atom_id'].ljust(3) + " "
@@ -298,6 +314,9 @@ def rebuild_atom_line(atoms: list) -> str:
         line += str(format(atom['B_iso_or_equiv'], ".2f")).rjust(6) + "           "
         line += atom['atom_type'] + "\n"
         output += line
+        if last_chain != atom["chain_id"]:
+            last_chain = atom["chain_id"]
+            output += "TER\n"
     logging.debug(f"Rebuilt atom(s): {output}")
     return output
 
@@ -360,7 +379,7 @@ def renumber_ascending(pdb: str, rename: str = None) -> None:
                     # Because there are only 5 characters for the atom serial number and 4 for the residue, we need
                     # to restrict the number space to < 100,000 and 10,000, respectively
                     if running_atom_count > 99999 or running_residue_count > 9999:
-                        if cm.get("permissive"):
+                        if cm().get("permissive"):
                             logging.log(logging.WARN, f"While renumbering {pdb} atom or residue count exceeded legal "
                                                       f"limits. Counts will be taken modulo 100,000 and 10,000, "
                                                       f"respectively. Proceeding may cause unexpected program "
@@ -392,7 +411,7 @@ def renumber_ascending(pdb: str, rename: str = None) -> None:
 
 def remove_chain(pdb: str, chain_id: List[str], rename: str = None) -> None:
     """
-    Removes chains with a certain ID and save the results in a PDB.
+    Removes chains with a certain ID and save the output in a PDB.
 
     :param pdb: Path to PDB to be read
     :param chain_id: A list of ids to be deleted (i.e. ['A', 'E', 'P'])
@@ -439,7 +458,7 @@ def superimpose(pdb: str, ref_pdb: str, target_order: str, ref_order: str, renam
         residues = get_amino_acids_on_chain(pdb, chain)
         if residues is None:
             logging.error(f"Couldn't find any residues for chain {chain} in '{pdb}'!")
-            if not cm.get("permissive"):
+            if not cm().get("permissive"):
                 logging.error(f"Aborting now...")
                 sys.exit(1)
         target_seq[chain] = residues
@@ -450,7 +469,7 @@ def superimpose(pdb: str, ref_pdb: str, target_order: str, ref_order: str, renam
         residues = get_amino_acids_on_chain(ref_pdb, chain)
         if residues is None:
             logging.error(f"Couldn't find any residues for chain {chain} in '{pdb}'!")
-            if not cm.get("permissive"):
+            if not cm().get("permissive"):
                 logging.error(f"Aborting now...")
                 sys.exit(1)
         ref_seq[chain] = residues
@@ -481,7 +500,7 @@ def superimpose(pdb: str, ref_pdb: str, target_order: str, ref_order: str, renam
         start_pos['reference'][ref_pos[chain_pos]] = [temp_align[0].path[0][1], temp_align[0].path[1][1]]
 
     # Initialize parser
-    if cm.get("verbose"):
+    if cm().get("verbose"):
         parser = Bio.PDB.PDBParser(QUIET=False)
     else:
         parser = Bio.PDB.PDBParser(QUIET=True)
@@ -670,7 +689,7 @@ def get_center(pdb: str) -> list:
         if len(atoms) == 0:
             logging.error(f"Couldn't get atoms for chain {chain} in '{pdb}'. Proceeding anyway will likely cause the "
                           f"resultant PDB to be incomplete.")
-            if not cm.get("permissive"):
+            if not cm().get("permissive"):
                 sys.exit(1)
         default_atoms[chain] = atoms
         for atom in default_atoms[chain]:
@@ -683,7 +702,6 @@ def get_center(pdb: str) -> list:
     return centroid
 
 
-# TODO: Have this keep HEADER, REMARK, and SSBOND records as well
 def center(pdb: str, rename: str = None) -> None:
     """
     Gather all atoms in the file and calculate the average XYZ coord to find the center of the structure. Write out
@@ -693,6 +711,13 @@ def center(pdb: str, rename: str = None) -> None:
     :param rename : Optional name for new PDB created by method with centered structure
     """
     logging.info(f"Trying to find center of structure in '{pdb}'...")
+    header = ""
+    with open(pdb, "r+") as pdb_file:
+        for line in pdb_file:
+            if line[0:6] in ["HEADER", "REMARK", "SSBOND"]:
+                header += line
+            elif line[0:6] == "ATOM  ":  # We've moved past the header
+                break
     atoms = []
     full_atom = []
     # Collect atom information from PDB
@@ -700,8 +725,8 @@ def center(pdb: str, rename: str = None) -> None:
         atoms = get_atoms_on_chain(pdb, chain)
         if len(atoms) == 0:
             logging.error(f"Couldn't get atoms for chain {chain} in '{pdb}'. Proceeding anyway will likely cause the "
-                          f"resultant PDB to be incomplete or other unexpected behaviour.")
-            if not cm.get("permissive"):
+                          f"resultant PDB to be incomplete or cause other unexpected behaviour.")
+            if not cm().get("permissive"):
                 sys.exit(1)
         chain_atoms = atoms
         for atom in chain_atoms:
@@ -752,7 +777,9 @@ def center(pdb: str, rename: str = None) -> None:
     if rename:
         new_name = rename
     with open(new_name, "w") as f:
+        f.write(header)
         f.write(rebuild_atom_line(full_atom))
+        f.write("TER\nEND\n")
         logging.info(f"Wrote centered pdb to {new_name}")
 
 
@@ -785,7 +812,6 @@ def join(pdb_1: str, pdb_2: str, rename: str = None) -> None:
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
-# FIXME: TER in between chains is missing
 def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> None:
     """
     Update the chain order. Must send in a list with identical number of chains
@@ -802,7 +828,7 @@ def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> None:
         if len(atoms) == 0:
             logging.error(f"Couldn't get atoms for chain {chain} in '{pdb}'. Proceeding anyway will likely cause the "
                           f"resultant PDB to be incomplete.")
-            if not cm.get("permissive"):
+            if not cm().get("permissive"):
                 sys.exit(1)
         chain_info[chain] = atoms
     for chain in list(chain_order):
@@ -818,7 +844,6 @@ def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> None:
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
-# FIXME: TER is missing inbetween chains
 def update_chain_id(pdb: str, id_mapping: dict, rename: str = None) -> None:
     """
     Update the labels based on submitted chain dictionary
@@ -836,7 +861,7 @@ def update_chain_id(pdb: str, id_mapping: dict, rename: str = None) -> None:
         if len(atoms) == 0:
             logging.error(f"Couldn't get atoms for chain {chain} in '{pdb}'. Proceeding anyway will likely cause the "
                           f"resultant PDB to be incomplete.")
-            if not cm.get("permissive"):
+            if not cm().get("permissive"):
                 sys.exit(1)
         chain_info[chain] = atoms
     for chain in chain_info:
@@ -853,7 +878,6 @@ def update_chain_id(pdb: str, id_mapping: dict, rename: str = None) -> None:
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well. Also renumber SSBOND records if present
-# FIXME: Doesn't write out TER or END records
 def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, rename: str = None) -> None:
     """
     Align chains and for amino acids that overlap, renumber them to the reference chains
@@ -901,6 +925,7 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
                                                                                                section_residue[1]]
     aligns = {}  # alignments to determine start of chain number if they don't start at the same point
     for chain in target_chains:
+        # TODO: Use Align.PairwiseAligner instead
         aligns[chain] = pairwise2.align.globalms(target_seqs[chain], ref_seqs[chain], 2, -1, -2, -.5,
                                                  penalize_end_gaps=(False, False), one_alignment_only=True)
         # If there is a gap at the start of the target seq, removes those positions from ref_aa until it matches
@@ -959,11 +984,153 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
                     w.write(line)
 
 
-def get_dist_centroid(pdb: str, first: List[Union[int, REBprocessor.Node]],
-                      second: List[Union[int, REBprocessor.Node]], resolution_total: bool = True) -> Union[
-    float, Tuple[float, int, int]]:
+def get_centroid(pdb: str, residues: List[Union[REBprocessor.Node, int]], weighted: bool = False,
+                 to_chain: str = False) -> Tuple[float, float, float]:
     """
-    Returns the distance between the centroid of the first and second list of residues.
+    Returns the centroid of the list of residues as a tuple of X, Y, Z coordinates. Can be weighted according to the
+    interaction energies. If weighting is desired, a list of REBprocessor.Node instances and to_chain must be supplied.
+    Interaction strengths get normalized to [0.001, 1] and will be multiplied with the difference of the centroid of
+    each residue and the global (unweighted) centroid. If the interaction is repulsive, the centroid will be nudged
+    away from the residue centroid by this multiplied difference, if it is attractive, it will be nudged towards the
+    residue centroid by this multiplied difference.
+
+    :param pdb: The path to the PDB file to be read
+    :param residues: A list of either residue ids or REBprocessor.Node instances
+    :param weighted: Whether to calculate a weighted centroid
+    :param to_chain: If calculating a weighted centroid, which interaction energies to which chain to consider
+    :return:
+    """
+    if len(residues) == 0:
+        if cm().get("permissive"):
+            logging.warning(f"Passed empty list to get_centroid()! Returning (0, 0, 0)...")
+            return 0.0, 0.0, 0.0
+        else:
+            logging.error(f"Cannot pass empty list to get_centroid()! Aborting...")
+            raise ValueError("Cannot pass empty list to get_centroid()!")
+    if weighted and not to_chain:
+        if cm().get("permissive"):
+            logging.warning(f"Trying to calculate weighted centroid, but 'to_chain' has not been specified! "
+                            f"Returning unweighted centroid instead...")
+            weighted = False
+        else:
+            logging.error("Trying to calculate weighted centroid, but 'to_chain' has not been specified! Aborting...")
+            raise ValueError("Trying to calculate weighted centroid, but 'to_chain' has not been specified! "
+                             "Aborting...")
+    if weighted and (isinstance(residues[0], REBprocessor.Node) and residues[0].chain == to_chain):
+        logging.warning("Using strength to own chain, this may cause unexpected behavior!")
+    posx = 0.0
+    posy = 0.0
+    posz = 0.0
+    ids = []
+    strengths = {}
+    for r in residues:
+        if weighted and not isinstance(r, REBprocessor.Node):
+            if cm().get("permissive"):
+                logging.warning(f"Entry in residue list ({r}) wasn't a REBprocessor.Node! Skipping this one...")
+            else:
+                logging.error(f"Entry in residue list ({r}) wasn't a REBprocessor.Node! Aborting...")
+                raise ValueError("Not all entries in the residue list passed to get_centroid() were "
+                                 "REBprocesser.Node instances! This is necessary for weighted calculation!")
+        ids.append(int(r))
+        if weighted:
+            strengths[r.residue_id] = r.strength.get(to_chain, 0)
+    if len(ids) == 0:
+        if cm().get("permissive"):
+            logging.warning(f"Couldn't determine any valid residue ids! Returning (0, 0, 0)...")
+            return 0.0, 0.0, 0.0
+        else:
+            logging.error(f"Couldn't determine any valid residue ids! Aborting...")
+            raise ValueError("Couldn't determine any valid residue ids!")
+    residue_pos = {}
+    with open(pdb, "r+") as pdb_in:
+        for line in pdb_in:
+            if line[0:6] == "ATOM  " and int(line[section_residue_number[0]:section_residue_number[1]]) in ids:
+                if int(line[section_residue_number[0]:section_residue_number[1]]) not in residue_pos:
+                    residue_pos[int(line[section_residue_number[0]:section_residue_number[1]])] = [0.0, 0.0, 0.0, 0]
+                residue_pos[int(line[section_residue_number[0]:section_residue_number[1]])][3] += 1
+                residue_pos[int(line[section_residue_number[0]:section_residue_number[1]])][0] += float(
+                    line[section_x[0]:section_x[1]])
+                residue_pos[int(line[section_residue_number[0]:section_residue_number[1]])][1] += float(
+                    line[section_y[0]:section_y[1]])
+                residue_pos[int(line[section_residue_number[0]:section_residue_number[1]])][2] += float(
+                    line[section_z[0]:section_z[1]])
+    if not weighted:
+        for pos in residue_pos.values():
+            posx += pos[0] / pos[3]
+            posy += pos[1] / pos[3]
+            posz += pos[2] / pos[3]
+        return posx / len(residue_pos), posy / len(residue_pos), posz / len(residue_pos)
+    else:
+        # TODO: Just avg residue position * normed strength instead of nudging routine?
+        #  i. e.: ( (0.1 * xyz_1 + 0.4 * xyz_2 + 0.2 * xyz_3 + ...) / num_res )
+        # Normalize values
+        min_strength_attractive = 10000.0
+        min_strength_repulsive = 10000.0
+        max_strength_attractive = 0.0
+        max_strength_repulsive = 0.0
+        for s in strengths.values():
+            if s < 0:
+                if -1 * s < min_strength_attractive:
+                    min_strength_attractive = -1 * s
+                if -1 * s > max_strength_attractive:
+                    max_strength_attractive = -1 * s
+            elif s > 0:
+                if s < min_strength_repulsive:
+                    min_strength_repulsive = s
+                    # min_strength_repulsive = s / 3
+                if s > max_strength_repulsive:
+                    max_strength_repulsive = s
+                    # max_strength_repulsive = s / 3
+
+        def _norm(strength: float) -> Tuple[float, int]:
+            if strength < 0:
+                return max(0.001, (-1 * s - min_strength_attractive) /
+                           (max_strength_attractive - min_strength_attractive)), 1
+            elif strength > 0:
+                return max(0.001, (s - min_strength_repulsive) / (max_strength_repulsive - min_strength_repulsive)), -1
+            else:
+                return 0.0001, 1  # epsilon
+
+        for rid, s in strengths.items():
+            strengths[rid] = _norm(s)
+
+        centroid_x = 0.0
+        centroid_y = 0.0
+        centroid_z = 0.0
+
+        for pos in residue_pos.values():
+            centroid_x += pos[0] / pos[3]
+            centroid_y += pos[1] / pos[3]
+            centroid_z += pos[2] / pos[3]
+
+        centroid_x /= len(residue_pos)
+        centroid_y /= len(residue_pos)
+        centroid_z /= len(residue_pos)
+
+        x_weighted = centroid_x
+        y_weighted = centroid_y
+        z_weighted = centroid_z
+
+        for rid, s in strengths.items():
+            # Add weighted difference of res_pos <> centroid to start centroid pos
+            if s[1] == 1:
+                x_weighted += (residue_pos[rid][0] / residue_pos[rid][3] - centroid_x) * s[0]
+                y_weighted += (residue_pos[rid][1] / residue_pos[rid][3] - centroid_y) * s[0]
+                z_weighted += (residue_pos[rid][2] / residue_pos[rid][3] - centroid_z) * s[0]
+            elif s[1] == -1:  # in case of repulsion, push weighted center into opposite direction
+                x_weighted -= (residue_pos[rid][0] / residue_pos[rid][3] - centroid_x) * s[0]
+                y_weighted -= (residue_pos[rid][1] / residue_pos[rid][3] - centroid_y) * s[0]
+                z_weighted -= (residue_pos[rid][2] / residue_pos[rid][3] - centroid_z) * s[0]
+
+        return x_weighted, y_weighted, z_weighted
+
+
+def get_dist_centroid(pdb: str, first: List[Union[int, REBprocessor.Node]], second: List[Union[int, REBprocessor.Node]],
+                      resolution_total: bool = True) -> Union[float, Tuple[float, int, int]]:
+    """
+    Returns the distance between the centroid of the first and second list of residues. If resolution_total is set to
+    False, it will instead calculate the distance between the closest two residues of the two lists and return a tuple
+    of (distance, resid_from_first, resid_from_second).
 
     :param pdb: The path to the PDB to be read
     :param first: List of residue ids
@@ -973,7 +1140,7 @@ def get_dist_centroid(pdb: str, first: List[Union[int, REBprocessor.Node]],
     :return: The distance between the centroid of the first and second list of residues
     """
     if len(first) == 0 or len(second) == 0:
-        if cm.get("permissive"):
+        if cm().get("permissive"):
             return 0.0
         else:
             raise ValueError("Can't pass empty list to avg distance function.")
@@ -1053,7 +1220,8 @@ _tree_cache = {}
 def get_dist_closest_atom(pdb: str, first: List[Union[int, REBprocessor.Node]],
                           second: List[Union[int, REBprocessor.Node]]) -> Tuple[float, int, int]:
     """
-    Returns the distance between the closest two atoms of the closest two residues in first and second.
+    Returns the distance between the closest two atoms of the closest two residues in first and second, as well as which
+    residues are involved from each list.
 
     :param pdb: The path to the PDB to be read
     :param first: A list of residue ids
@@ -1061,7 +1229,7 @@ def get_dist_closest_atom(pdb: str, first: List[Union[int, REBprocessor.Node]],
     :return: (closest distance, residue 1, residue 2)
     """
     if len(first) == 0 or len(second) == 0:
-        if cm.get("permissive"):
+        if cm().get("permissive"):
             return 0.0, 0, 0
         else:
             raise ValueError("Can't pass empty list to avg distance function.")
