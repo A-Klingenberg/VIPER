@@ -114,11 +114,13 @@ class ConfigManager(metaclass=_Singleton):
                                 force=True)
         self.log_config()
 
-        # Set results path
+        # Set output path
         p = None
-        if self.file_config and "results_path" in self.file_config.keys() and self.file_config["results_path"] is not None:
+        if (self.file_config and "results_path" in self.file_config.keys() and
+                self.file_config["results_path"] is not None):
             p = self.file_config["results_path"]
-        if self.command_args and "results_path" in self.command_args.keys() and self.command_args["results_path"] is not None:
+        if (self.command_args and "results_path" in self.command_args.keys() and
+                self.command_args["results_path"] is not None):
             p = self.command_args["results_path"]
         if p is None:
             p = "output"  # Fallback
@@ -126,21 +128,22 @@ class ConfigManager(metaclass=_Singleton):
 
         # Validate Rosetta path
         if r := self.get("rosetta_config.path"):
-            # Try to fix path if it hasn't been set to the /main/source/bin/
+            # Try to make sure that Rosetta executables are findable in given directory
             apps = [p.resolve() for p in Path(r).glob("**/*") if
                     (".mpi." in p.name or ".default." in p.name) and ("release" in p.name or "debug" in p.name)]
             if len(apps) == 0:
                 if self.get("permissive"):
                     logging.warning(f"Could not find any Rosetta executables in the path you provided! ({r}) "
-                                    f"If you continue anyway and try to use Rosetta apps, you will likely crash!")
+                                    f"If you continue anyway and try to use Rosetta apps, you will run into errors!")
                 else:
-                    logging.critical(
+                    logging.error(
                         f"Could not find any Rosetta executables in the path you provided! ({r}) - Aborting...")
                     sys.exit(1)
 
     def get(self, setting: str) -> Optional[Any]:
         """
-        Gets a given setting, if it is set, otherwise returns None. For a list of all setting, see accompanying documentation.
+        Gets a given setting, if it is set, otherwise returns None. For a list of all settings,
+        see accompanying documentation.
         Important: command-line settings take precedence over config.json settings!
 
         :param setting: A string representing the name of the setting to be retrieved
