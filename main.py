@@ -6,8 +6,6 @@ import os
 
 from ConfigManager import ConfigManager
 
-configmanager: ConfigManager = None
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -16,7 +14,7 @@ def parse_args() -> argparse.Namespace:
                                     "cell surface protein", type=str)
     parser.add_argument("--config", help="The path to a config file", type=str)
     parser.add_argument("--log_path", help="The path to where log files should be written", type=str)
-    parser.add_argument("--results_path", help="The path to where the results of all files should be written", type=str,
+    parser.add_argument("--results_path", help="The path to where the output of all files should be written", type=str,
                         default="output")
     parser.add_argument("--verbose", help="Set this flag to log additional information", type=bool, default=False)
     parser.add_argument("--permissive", help="Set this flag to have VIPER continue running even if it encounters "
@@ -26,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     # rosetta config
     parser.add_argument("--rosetta_config.path", help="The path to your rosetta executable", type=str)
     parser.add_argument("--rosetta_config.path_out",
-                        help="The path to where the results of rosetta runs shall be written", type=str,
+                        help="The path to where the output of rosetta runs shall be written", type=str,
                         default="path_out")
     parser.add_argument("--rosetta_config.relax_protein_runs", help="How many protein relaxation runs should be run",
                         type=int, default=100)
@@ -48,9 +46,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    global configmanager
-    configmanager = ConfigManager(force=True, args=args,
-                                  base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
+    # noinspection PyArgumentList
+    ConfigManager(force=True, args=args, base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
 
 
 if __name__ == "__main__":
