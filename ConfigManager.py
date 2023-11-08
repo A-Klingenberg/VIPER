@@ -153,9 +153,9 @@ class ConfigManager(metaclass=_Singleton):
             return self.program_path
         if setting == "results_path":
             return self.results_path
-        if self.command_args and setting in self.command_args:
+        if self.command_args and setting in self.command_args and self.command_args[setting] is not None:
             return self.command_args[setting]
-        elif self.file_config and setting in self.file_config:
+        elif self.file_config and setting in self.file_config and self.file_config[setting] is not None:
             return self.file_config[setting]
         else:
             return None
