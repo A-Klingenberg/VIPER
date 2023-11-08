@@ -89,7 +89,7 @@ class RosettaWrapper:
         """
         use_path = os.path.join(cm().get("results_path"), os.path.normpath(cm().get("rosetta_config.path_out")),
                                 "run_configs", filename)
-        logging.info(f"Making run config {use_path}...")
+        logging.info(f"Making run config {use_path} ...")
         with open(use_path, "w") as out:
             for option, value in options.items():
                 if value is not None:
@@ -489,7 +489,7 @@ class Flags:
 
     relax_complex_for_REB: dict = {
         "app": "relax",
-        "in:file:s": None,
+        "-in:file:s": None,
         "-out:path:all": None,
         "-out:suffix": "_relax_REB",
         "-run:constant_seed": None,
