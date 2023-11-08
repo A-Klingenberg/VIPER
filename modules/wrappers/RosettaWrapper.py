@@ -164,9 +164,14 @@ class RosettaWrapper:
             logging.info(f"Trying to run application '{app}' with options '{options}'...")
             RosettaWrapper._dispatch(self.apps[app], options)
         else:
+            app_name = None
             if flag:
+                app_name = flag.get("app", None)
+                if n := options.get("app", None):
+                    app_name = n
                 o = self.preprocess_options(flag, options)
             elif options:
+                app_name = options.get("app", None)
                 o = self.preprocess_options(options)
             else:
                 logging.error("Need to set either flag or options!")
@@ -174,11 +179,10 @@ class RosettaWrapper:
             use_app = app
             if a := o.pop("app", False):
                 use_app = a
-            use_app = self.apps.get(use_app, None)
             if use_app is None:
-                raise ValueError("Couldn't determine which app to use! Please supply the name of the Rosetta app in"
+                raise ValueError("Couldn't determine which app to use! Please supply the name of the Rosetta app in "
                                  "either the flag dictionary or the options dictionary.")
-            name = f"flag_{use_app}"
+            name = f"flag_{app_name}"
             flag_path = RosettaWrapper.make_options_file(filename=name, options=o)
             RosettaWrapper._dispatch(use_app, flag_path)
 
