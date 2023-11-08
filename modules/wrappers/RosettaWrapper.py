@@ -206,12 +206,12 @@ class RosettaWrapper:
         if override:
             for k, v in override.items():
                 flag[k] = v
+        if flag["app"] in self.apps.keys():
+            flag["app"] = self.apps[flag["app"]]
+        else:
+            logging.error(f"Could not preprocess options, because application '{flag['app']}' is unknown!")
+            raise LookupError(f"Could not preprocess options, because application '{flag['app']}' is unknown!")
         for k, v in flag.items():
-            if flag["app"] in self.apps.keys():
-                flag["app"] = self.apps[flag["app"]]
-            else:
-                logging.error(f"Could not preprocess options, because application '{flag['app']}' is unknown!")
-                sys.exit(1)
             if "-in:file" in k and v is None:
                 flag[k] = os.path.normpath(pdb_name)
                 continue
