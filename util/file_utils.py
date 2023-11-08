@@ -38,16 +38,39 @@ def compress_directory(directory: Union[str, Path], archive_name: Union[str, Pat
                 os.remove(file)
 
 
-def make_pdb_ensemble_list(directory: Union[str, Path], out_path: Union[str, Path]) -> None:
+def make_pdb_ensemble_list(directory: Union[str, Path], out_path: Union[str, Path]) -> str:
     """
     Writes a list of paths to all PDB files in a directory and its subdirectories into a file, one path per line.
 
     :param directory: Which directory to search for PDB files
     :param out_path: Into which file to write the paths to the PDB files
-    :return: None
+    :return: The path to the ensemble file (normalized 'out_path')
     """
     if isinstance(directory, str):
         directory = Path(directory)
-    with open(os.path.normpath(out_path), "w") as ensemble_out:
+    out = os.path.normpath(out_path)
+    with open(out, "w") as ensemble_out:
         for file in directory.glob("**/*.pdb"):
             ensemble_out.write(os.path.normpath(file) + "\n")
+    return out
+
+
+def gather_files(directory: Union[str, Path], type: str = "pdb", recursive: bool = False) -> List:
+    """
+    Returns a list of paths to all PDB files in a given directory (and its subdirectories if recursive is true).
+
+    :param directory: Which directory to search for PDB files
+    :param type: Which file type to gather. Default is 'pdb'
+    :param recursive: Whether to also search subdirectories
+    :return: A list of paths to PDB files
+    """
+    directory = Path(directory)
+    if recursive:
+        paths = []
+        for file in directory.glob(f"**/*.{type}"):
+            paths.append(file)
+    else:
+        paths = []
+        for file in directory.glob(f"*.{type}"):
+            paths.append(file)
+    return paths

@@ -6,10 +6,10 @@ import sys
 from abc import abstractmethod, ABCMeta
 from typing import List, final, Type
 
-from ConfigManager import ConfigManager
+import ConfigManager
 from modules.wrappers.RosettaWrapper import REBprocessor
 
-cm = ConfigManager.get_cm
+cm = ConfigManager.ConfigManager.get_cm
 
 
 class PeptideGenerator:

@@ -56,5 +56,15 @@
       "lone_residue_pad_range": 1,
       "custom_func": false
     }
+  },
+  "pepstrmod_config": {
+    "email": "",
+    "simulation_time": "100ps",
+    "environment": "vac",
+    "download_topology": true,
+    "cluster_analysis": false,
+    "download_trajectory": true,
+    "do_energy_rms_graph": true,
+    "wait_interval": 60
   }
 }

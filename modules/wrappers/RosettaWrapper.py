@@ -16,9 +16,9 @@ from typing import Union, List, final, Tuple, Dict
 
 import pandas as pd
 
-from ConfigManager import ConfigManager
+import ConfigManager
 
-cm = ConfigManager.get_cm
+cm = ConfigManager.ConfigManager.get_cm
 
 
 class RosettaWrapper:
@@ -58,13 +58,13 @@ class RosettaWrapper:
         os.makedirs(self.base_path + "refine", exist_ok=True)
         os.makedirs(self.base_path + "relax", exist_ok=True)
 
-    def make_dir(self, p: Union[str, Path, List[str]]) -> None:
+    def make_dir(self, p: Union[str, Path, List[str]]) -> str:
         """
         Creates a subdir in the folder for Rosetta output files.
 
         :param p: This may be either a path to directory or a name for a subdirectory, or a list of names of
             subdirectories to be nested. I.e. ["a", "b"] will create "basepath/a/b/"
-        :return: None
+        :return: The path that was created
         """
         use_path = self.base_path
         if isinstance(p, list):
@@ -75,6 +75,7 @@ class RosettaWrapper:
         else:
             use_path = os.path.join(use_path, p)
         os.makedirs(use_path, exist_ok=True)
+        return use_path
 
     @staticmethod
     def make_options_file(filename: str, options: dict) -> str:

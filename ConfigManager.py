@@ -12,7 +12,7 @@ from pathlib import Path
 from pprint import pformat
 from typing import Optional, Any
 
-import VIPER
+import version
 
 
 class _Singleton(type):
@@ -167,7 +167,7 @@ class ConfigManager(metaclass=_Singleton):
         :return: None
         """
         logging.info(f"Running Python ver. {sys.version}")
-        logging.info(f"Running VIPER version {VIPER.VERSION}.")
+        logging.info(f"Running VIPER version {version.VERSION}.")
         logging.info(f"Using the following configuration:")
         if self.file_config:
             logging.info(f"---------- [ CONFIG FILE ] ----------")
