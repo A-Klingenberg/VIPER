@@ -55,22 +55,22 @@ def make_pdb_ensemble_list(directory: Union[str, Path], out_path: Union[str, Pat
     return out
 
 
-def gather_files(directory: Union[str, Path], type: str = "pdb", recursive: bool = False) -> List:
+def gather_files(directory: Union[str, Path], filetype: str = "pdb", recursive: bool = False) -> List:
     """
     Returns a list of paths to all PDB files in a given directory (and its subdirectories if recursive is true).
 
     :param directory: Which directory to search for PDB files
-    :param type: Which file type to gather. Default is 'pdb'
+    :param filetype: Which file type to gather. Default is 'pdb'
     :param recursive: Whether to also search subdirectories
     :return: A list of paths to PDB files
     """
     directory = Path(directory)
     if recursive:
         paths = []
-        for file in directory.glob(f"**/*.{type}"):
+        for file in directory.glob(f"**/*.{filetype}"):
             paths.append(file)
     else:
         paths = []
-        for file in directory.glob(f"*.{type}"):
+        for file in directory.glob(f"*.{filetype}"):
             paths.append(file)
     return paths
