@@ -6,17 +6,18 @@ import os
 import statistics
 import sys
 from math import sqrt
+from pathlib import Path
 from typing import Optional, List, Union, Tuple
 
 import Bio
 import numpy as np
-from Bio import Align, pairwise2
+from Bio import Align
 from scipy.spatial.transform import Rotation
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KDTree
 
-from modules.wrappers.RosettaWrapper import REBprocessor
 from ConfigManager import ConfigManager
+from modules.wrappers.RosettaWrapper import REBprocessor
 
 cm = ConfigManager.get_cm
 
@@ -279,11 +280,13 @@ def euclidean_of_atoms(pdb: str, atom_num_1: int, atom_num_2: int) -> Optional[f
     atom_2 = get_atom(pdb, atom_num_2)
     if atom_1 is None or atom_2 is None:
         logging.error(
-            f"Tried to compute euclidean distance between atom {atom_num_1} and {atom_num_2} in '{pdb}' but failed!")
+            f"Tried to compute euclidean distance between atom {atom_num_1} and {atom_num_2} in '{pdb}' but failed!"
+            f"One of the two atoms could not be found!")
         if cm().get("permissive"):
             return None
         else:
-            sys.exit(1)
+            raise ValueError(f"Tried to compute euclidean distance between atom {atom_num_1} and {atom_num_2} in '{pdb}' but failed!"
+                             f"One of the two atoms could not be found!")
     else:
         euclidean_distance = sqrt(
             (atom_2['X'] - atom_1['X']) ** 2 + (atom_2['Y'] - atom_1['Y']) ** 2 + (atom_2['Z'] - atom_1['Z']) ** 2)
@@ -321,7 +324,7 @@ def rebuild_atom_line(atoms: list) -> str:
     return output
 
 
-def renumber_ascending(pdb: str, rename: str = None) -> None:
+def renumber_ascending(pdb: str, out_path: str = None) -> Path:
     """
     Write out a PDB file in the same directory as the input PDB with atom number and sequence number in ascending order.
     There is an inherent limit on how large atom (serial) ids and residue ids may be (99,999 and 9,999).
@@ -331,16 +334,18 @@ def renumber_ascending(pdb: str, rename: str = None) -> None:
     Note: Only HEADER, SSBOND, and ATOM records will be kept, and no secondary positions will be copied over
 
     :param pdb: Path to PDB to be read
-    :param rename: Optional name for PDB file being created, otherwise use "_renumbered" appended to original name
+    :param out_path: Optional path for PDB file being created, otherwise "_renumbered" appended to original name and the
+        PDB will be written to the same directory
+    :return: A Path object to the written out file
     """
     logging.info(f"Renumbering {pdb} by counting up...")
 
     out_name = pdb[:-4] + "_renumbered.pdb"
-    if rename:
-        out_name = rename
+    if out_path:
+        out_name = out_path
 
     header = (
-        f"EXPDTA    DOCKING MODEL           RENUMBERED\nREMARK    3                                 \nREMARK    3 "
+        f"EXPDTA     MODEL                  RENUMBERED\nREMARK    3                                 \nREMARK    3 "
         f"PROGRAM    : VIPER, PDBtool {TOOL_VER} \n")
     ssbond = ""
     ssbond_res_ids = {}  # Will become mapping for updated ids
@@ -407,6 +412,7 @@ def renumber_ascending(pdb: str, rename: str = None) -> None:
         o.write(header)
         o.write(ssbond)
         o.write(coordinates)
+    return Path(out_name)
 
 
 def remove_chain(pdb: str, chain_id: List[str], rename: str = None) -> None:
@@ -425,8 +431,14 @@ def remove_chain(pdb: str, chain_id: List[str], rename: str = None) -> None:
     with open(pdb, 'r') as i, open(out_name, 'w+') as o:
         for line in i:
             if line[0:6] in KEEP_LINES:
-                if line[section_chain_id].upper() not in ids:
+                if line[0:6] == "ATOM  " and line[section_chain_id].upper() not in ids:
                     o.write(line)
+                    continue
+                if (line[0:6] == "SSBOND" and line[section_ssbond_chain_id1] not in ids
+                        and line[section_ssbond_chain_id2] not in ids):
+                    o.write(line)
+                    continue
+                o.write(line)  # is a line where chain id doesn't matter (HEADER, REMARK, ...)
         logging.info(f"PDB with chains {ids} removed saved to {rename}!")
 
 
@@ -877,8 +889,7 @@ def update_chain_id(pdb: str, id_mapping: dict, rename: str = None) -> None:
         logging.info(f"Wrote PDB with updated chain ids to '{new_name}'")
 
 
-# TODO: Have this keep HEADER, REMARK, and SSBOND records as well. Also renumber SSBOND records if present
-def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, rename: str = None) -> None:
+def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, rename: str = None) -> Path:
     """
     Align chains and for amino acids that overlap, renumber them to the reference chains
     numbering. Writes an updated PDB to disk.
@@ -888,6 +899,7 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
     :param pdb_ref: The reference PDB to align against
     :param custom: Optional comma separated str of numbering to apply to the shortest chain
     :param rename: Optional name for the updated PDB. Default is '{pdb}_orinum.pdb'
+    :return: A Path object to the written out PDB
     """
 
     def find_gap(seq: str) -> int:
@@ -911,6 +923,12 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
     target_seqs = {}  # Dictionary containing chain id: seq
     ref_aa = {}  # Dictionary containing aa numbering of ref.
 
+    header = (
+        f"EXPDTA     MODEL                  RENUMBERED\nREMARK    3                                 \nREMARK    3 "
+        f"PROGRAM    : VIPER, PDBtool {TOOL_VER} \n")
+    ssbond = ""
+    ssbond_res_ids = {}  # Will become mapping for updated ids
+
     for chain in target_chains:
         ref_seqs[chain] = get_amino_acids_on_chain(pdb_ref, chain)
         target_seqs[chain] = get_amino_acids_on_chain(pdb, chain)
@@ -924,14 +942,26 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
                         int(line[section_residue_number[0]:section_residue_number[1]])] = line[section_residue[0]:
                                                                                                section_residue[1]]
     aligns = {}  # alignments to determine start of chain number if they don't start at the same point
+    aligner = Align.PairwiseAligner()
+    aligner.mode = "global"
+    aligner.match_score = 2
+    aligner.mismatch_score = -1
+    aligner.open_gap_score = -2
+    aligner.extend_gap_score = -.5
     for chain in target_chains:
-        # TODO: Use Align.PairwiseAligner instead
-        aligns[chain] = pairwise2.align.globalms(target_seqs[chain], ref_seqs[chain], 2, -1, -2, -.5,
-                                                 penalize_end_gaps=(False, False), one_alignment_only=True)
+        aligns[chain] = aligner.align(target_seqs[chain], ref_seqs[chain])
+        # Determine best alignment
+        curr_best = None
+        for a in aligns[chain]:
+            if curr_best is None:
+                curr_best = a
+                continue
+            if a.score > curr_best.score:
+                curr_best = a
         # If there is a gap at the start of the target seq, removes those positions from ref_aa until it matches
-        start_of_chain = find_gap(aligns[chain][0][0])
-        while start_of_chain != 0:
-            ref_aa[chain].pop(ref_aa[chain].key()[0])
+        start_of_chain = find_gap(aligns[chain].sequences[0])
+        while start_of_chain > 0:
+            ref_aa[chain].popitem()
             start_of_chain -= 1
     shortest_num = 10000
     shortest_chain = ""
@@ -945,43 +975,74 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
         ref_aa[shortest_chain] = {}
         for aa in target_seqs[shortest_chain]:
             ref_aa[shortest_chain][custom_num.pop(0)] = one_to_three(aa)
+    body = ""
     with open(pdb, "r") as t:
-        new_name = pdb[:-4] + "_orinum.pdb"
-        if rename:
-            new_name = rename
-        with open(new_name, "w") as w:
-            atom_count = 1  # No matter what, starts atom count at 1
-            aa_num = -10000
-            current_chain = ""
-            for line in t:
-                if line[0:6] == 'ATOM  ':
-                    if aa_num < 0:  # Checks to see if we're just starting
-                        aa_num = int(line[section_residue_number[0]: section_residue_number[1]])
-                        current_chain = line[section_chain_id]  # Tells us the starting chain
-                    if current_chain != line[section_chain_id]:  # Checks to see if we're on a new chain
-                        ref_aa.pop(current_chain)  # Removes previous chain from list
-                        current_chain = line[section_chain_id]  # Updates current chain
-                        aa_num = int(
-                            line[section_residue_number[0]: section_residue_number[1]])  # Updates current aa count
-                    if aa_num != int(line[section_residue_number[0]: section_residue_number[1]]):
-                        ref_aa[line[section_chain_id]].pop(
-                            list(ref_aa[line[section_chain_id]])[0])  # Removes last counted AA
-                        aa_num = int(line[section_residue_number[0]: section_residue_number[1]])
-                    temp_line = ""
-                    temp_line += line[0:6]  # Adds header
-                    temp_line += str(atom_count).rjust(5)  # Adds atom count
-                    atom_count += 1
-                    if line[section_chain_id].upper() in upd_chains:  # Skips chains that we're not renumbering
-                        temp_line += line[11:section_residue_number[0]]  # Replaces gap from num to AA num
-                        next_num = list(ref_aa[line[section_chain_id]])[0]
-                        temp_line += str(next_num).rjust(4)
-                        temp_line += line[section_residue_number[1]:]
-                        w.write(temp_line)
-                    else:  # If we're skipping a chain we just write it but keep atom numbering
-                        temp_line += line[11:]
-                        w.write(temp_line)
-                else:
-                    w.write(line)
+        atom_count = 1  # No matter what, starts atom count at 1
+        current_residue_count = -10000
+        current_chain = ""
+        for line in t:
+            if line[0:6] == "HEADER" or line[0:6] == "REMARK":
+                header += line
+                continue
+            if line[0:6] == "SSBOND":
+                # Prepare SSBOND mapping, save current SSBOND values
+                ssbond += line
+                ssbond_res_ids[(int(line[section_ssbond_residue_id1[0]:section_ssbond_residue_id1[1]]),
+                                line[section_ssbond_chain_id1])] = -1
+                ssbond_res_ids[(int(line[section_ssbond_residue_id2[0]:section_ssbond_residue_id2[1]]),
+                                line[section_ssbond_chain_id2])] = -1
+                continue
+            if line[0:6] == 'ATOM  ':
+                pdb_chain_id = line[section_chain_id]
+                # This is the case at the very beginning
+                if current_residue_count < 0:
+                    current_residue_count = int(line[section_residue_number[0]:section_residue_number[1]])
+                    current_chain = pdb_chain_id  # Tells us the starting chain
+                # Checks to see if we're on a new chain
+                if current_chain != pdb_chain_id:
+                    ref_aa.pop(current_chain)  # Removes previous chain from list
+                    current_chain = pdb_chain_id
+                    current_residue_count = int(line[section_residue_number[0]:section_residue_number[1]])
+                # We're looking at a new residue and must therefore update our current_residue_count
+                if current_residue_count != int(line[section_residue_number[0]:section_residue_number[1]]):
+                    # Removes current (leftmost) reference residue
+                    ref_aa[pdb_chain_id].pop([*ref_aa[pdb_chain_id].keys()][0])
+                    current_residue_count = int(line[section_residue_number[0]:section_residue_number[1]])
+                # Update SSBOND mapping to new num
+                for k in ssbond_res_ids.keys():
+                    if current_residue_count == k[0] and pdb_chain_id == k[1]:
+                        # Save residue id of current (leftmost) reference residue as new id for SSBOND entry
+                        ssbond_res_ids[k] = [*ref_aa[pdb_chain_id].keys()][0]
+                # Save updated line up to the updated atom count
+                temp_line = "" + line[0:6] + str(atom_count).rjust(5)
+                if pdb_chain_id.upper() in upd_chains:  # Skips chains that we're not renumbering
+                    temp_line += line[11:section_residue_number[0]]  # Replaces gap from num to residue num
+                    # This is the reference residue id for the current residue in the PDB
+                    next_num = [*ref_aa[pdb_chain_id].keys()][0]
+                    temp_line += str(next_num).rjust(4) + line[section_residue_number[1]:]
+                    body += temp_line + "\n"
+                else:  # If we're skipping a chain we just write it but keep atom numbering
+                    temp_line += line[11:]
+                    body += temp_line + "\n"
+                atom_count += 1
+                continue
+            else:
+                body += line
+                continue
+    # Update SSBOND entries based on the discovered mapping
+    for old_entry, new_entry in ssbond_res_ids.items():
+        old = str(old_entry[1]) + " " + str(old_entry[0]).rjust(4)
+        new = str(old_entry[1]) + " " + str(new_entry).rjust(4)
+        ssbond = ssbond.replace(old, new, 1)
+    # Write out updated PDB
+    new_name = pdb[:-4] + "_orinum.pdb"
+    if rename:
+        new_name = rename
+    with open(new_name, "w") as w:
+        w.write(header)
+        w.write(ssbond)
+        w.write(body)
+    return Path(new_name)
 
 
 def get_centroid(pdb: str, residues: List[Union[REBprocessor.Node, int]], weighted: bool = False,
