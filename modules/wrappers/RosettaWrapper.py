@@ -12,7 +12,7 @@ from enum import IntEnum
 from io import StringIO
 from pathlib import Path
 from pprint import pformat
-from typing import Union, List, final, Tuple, Dict
+from typing import Union, List, final, Tuple, Dict, Optional
 
 import pandas as pd
 
@@ -42,7 +42,7 @@ class RosettaWrapper:
                 if ".mpi." in str(app.name):
                     logging.debug(f"Found app '{components[0]}' in path '{str(app)}'!")
                     self.apps[components[0]] = str(app)
-                elif ".default." in str(app.name):
+                elif ".default." in str(app.name) and len(self.apps.get(components[0], "")) == 0:
                     logging.debug(f"Found app '{components[0]}' in path '{str(app)}'!")
                     self.apps[components[0]] = str(app)
         else:
@@ -115,7 +115,7 @@ class RosettaWrapper:
             logging.debug(f"Running Rosetta with MPI...")
             res = subprocess.run(["mpirun", app, "@" + flag], capture_output=True, text=True)
             logging.debug("Stdout from Rosetta run: " + res.stdout)
-            if len(res.stderr) == 0:
+            if len(res.stderr) > 0:
                 if cm().get("permissive"):
                     logging.warning("The Rosetta run encountered errors! See: " + res.stderr)
                     logging.warning("Trying to continue anyway...")
@@ -125,7 +125,7 @@ class RosettaWrapper:
             logging.debug(f"Running Rosetta with default...")
             res = subprocess.run([app, "@" + flag], capture_output=True, text=True)
             logging.debug("Stdout from Rosetta run: " + res.stdout)
-            if len(res.stderr) == 0:
+            if len(res.stderr) > 0:
                 if cm().get("permissive"):
                     logging.warning("The Rosetta run encountered errors! See: " + res.stderr)
                     logging.warning("Trying to continue anyway...")
@@ -310,7 +310,7 @@ class ScoreFileParser:
 
     @staticmethod
     def get_extremum(score_file: Union[str, Path], column: str,
-                     extremum_type: ExtremumType = ExtremumType.MINIMUM) -> dict:
+                     extremum_type: ExtremumType = ExtremumType.MINIMUM) -> Optional[tuple]:
         """
         Gets the PDB that is associated with the specified extremum (minimum / maximum value) for the given column
         in the given score file.
@@ -320,7 +320,7 @@ class ScoreFileParser:
         :param score_file: Which Rosetta score file to analyze
         :param column: Which column to search for extremum
         :param extremum_type: Which extremum to search for (standard: ExtremumType.MINIMUM)
-        :return: A dictionary in the format {"pdb_file": {dict of values for columns}} or None
+        :return: A tuple in the format ("path_to_pdb_file", {dict of values for columns}) or None
         """
         scores = ScoreFileParser.read_in(score_file)
         curr_bound = 10000000000
@@ -328,7 +328,7 @@ class ScoreFileParser:
         for pdb, values in scores.items():
             if v := values.get(column, None):
                 if extremum_type * v < curr_bound:
-                    curr_best_pdb = {pdb: scores[pdb]}
+                    curr_best_pdb = (pdb, scores[pdb])
                     curr_bound = extremum_type * v
         return curr_best_pdb
 
@@ -501,7 +501,7 @@ class Flags:
         "-no_his_his_pairE": None,
         "-no_optH": False,
         "-flip_HNQ": None,
-        "-relax:thorough": None,
+        "-relax:fast": None,
         "-relax:constrain_relax_to_start_coords": None,  # Pin backbone to known position
         "-relax:coord_constrain_sidechains": None,  # Pin heavy atoms in sidechains
         "-relax:ramp_constraints": False,  # Conserve constraints throughout run
