@@ -2,7 +2,7 @@
   "log_path": "",
   "verbose": false,
   "num_CPU_cores": 4,
-  "results_path": "results",
+  "results_path": "output",
   "vsp_chain": "",
   "partner_chain": "",
   "rosetta_config": {
