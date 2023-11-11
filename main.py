@@ -15,8 +15,8 @@ def parse_args() -> argparse.Namespace:
                                     "cell surface protein", type=str)
     parser.add_argument("--config", help="The path to a config file", type=str)
     parser.add_argument("--log_path", help="The path to where log files should be written", type=str)
-    parser.add_argument("--results_path", help="The path to where the output of all files should be written", type=str,
-                        default="output")
+    parser.add_argument("--results_path", help="The path to where the output of all files should be written",
+                        type=str)
     parser.add_argument("--verbose", help="Set this flag to log additional information", type=bool, default=False)
     parser.add_argument("--permissive", help="Set this flag to have VIPER continue running even if it encounters "
                                              "problems which might lead to unexpected behaviour", type=bool,
@@ -51,7 +51,18 @@ def main() -> None:
     ConfigManager(force=True, args=args, base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
     v = VIPER(ConfigManager.get_cm().get("PDB"))
     aggregate, base = v.do_energy_breakdown()
-    print("AAA")
+    print("Aggregate:")
+    for n in aggregate:
+        temp = ""
+        for chain, energy in n.strength.items():
+            temp += f"{chain}: {energy:+.4f}; "
+        print(f"{n.__repr__()} - [{temp}]")
+    print("\nBase:")
+    for n in base:
+        temp = ""
+        for chain, energy in n.strength.items():
+            temp += f"{chain}: {energy:+.4f}; "
+        print(f"{n.__repr__()} - [{temp}]")
 
 
 if __name__ == "__main__":
