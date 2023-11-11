@@ -42,7 +42,7 @@ class VIPER:
         self.reference_renum_pdb = PDBtool.renumber_ascending(os.path.normpath(self.base_pdb),
                                                               os.path.normpath(os.path.join(intermediary_dir,
                                                                                             "..",
-                                                                                            self.base_pdb.name[:-4],
+                                                                                            self.base_pdb.name[:-4] +
                                                                                             "_renum.pdb")))
         logging.debug(f"Relaxing renumbered PDB...")
         self.rw.run(RosettaWrapper.Flags.relax_complex_for_REB, options={
