@@ -50,6 +50,7 @@ def main() -> None:
     # noinspection PyArgumentList
     ConfigManager(force=True, args=args, base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
     v = VIPER(ConfigManager.get_cm().get("PDB"))
+    v.preprocess_pdb()
     aggregate, base = v.do_energy_breakdown()
     print("Aggregate:")
     for n in aggregate:
