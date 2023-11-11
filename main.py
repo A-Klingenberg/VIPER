@@ -17,7 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log_path", help="The path to where log files should be written", type=str)
     parser.add_argument("--results_path", help="The path to where the output of all files should be written",
                         type=str)
-    parser.add_argument("--verbose", help="Set this flag to log additional information", type=bool, default=False)
+    parser.add_argument("--verbose", help="Set this flag to log additional information", action="store_true")
     parser.add_argument("--permissive", help="Set this flag to have VIPER continue running even if it encounters "
                                              "problems which might lead to unexpected behaviour", type=bool,
                         default=True)
