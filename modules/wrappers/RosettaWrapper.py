@@ -203,9 +203,7 @@ class RosettaWrapper:
         logging.info("Preprocessing options file...")
         logging.debug("With flag:" + pformat(flag))
         logging.debug("With override:" + pformat(override))
-        pdb_name = cm().get("PDB")
-        if pdb:
-            pdb_name = pdb
+
         if override:
             for k, v in override.items():
                 flag[k] = v
@@ -216,31 +214,38 @@ class RosettaWrapper:
             raise LookupError(f"Could not preprocess options, because application '{flag['app']}' is unknown!")
         for k, v in flag.items():
             if "-in:file" in k and v is None:
-                flag[k] = os.path.normpath(pdb_name)
+                if pdb:
+                    flag[k] = os.path.normpath(pdb)
+                else:
+                    logging.error("No input file has been set!")
+                    raise ValueError("No input file has been set!")
                 continue
             if "-out:" in k and v is None:
+                if pdb is None:
+                    logging.error("Can't derive path to output, because no input file has been set!")
+                    raise ValueError("Can't derive path to output, because no input file has been set!")
                 if "file" in k and "fullatom" not in k:
                     if "relax" in flag["app"]:
-                        flag[k] = os.path.join(self.base_path, "relax", pdb_name)
+                        flag[k] = os.path.join(self.base_path, "relax", os.path.normpath(pdb))
                     elif "prepack" in flag["app"]:
-                        flag[k] = os.path.join(self.base_path, "prepack", pdb_name)
+                        flag[k] = os.path.join(self.base_path, "prepack", os.path.normpath(pdb))
                     elif ("docking" in flag["app"] and not
                     ("-docking_local_refine" in flag.values() or "-docking_local_refine_min" in flag.values())):
-                        flag[k] = os.path.join(self.base_path, "docking", pdb_name)
+                        flag[k] = os.path.join(self.base_path, "docking", os.path.normpath(pdb))
                     elif ("docking" in flag["app"] and
                           ("-docking_local_refine" in flag.values() or "-docking_local_refine_min" in flag.values())):
-                        flag[k] = os.path.join(self.base_path, "refine", pdb_name)
+                        flag[k] = os.path.join(self.base_path, "refine", os.path.normpath(pdb))
                 elif "path" in k:
                     if "relax" in flag["app"]:
-                        flag[k] = os.path.join(self.base_path, "relax", pdb_name)
+                        flag[k] = os.path.join(self.base_path, "relax", os.path.normpath(pdb))
                     elif "prepack" in flag["app"]:
-                        flag[k] = os.path.join(self.base_path, "prepack", pdb_name)
+                        flag[k] = os.path.join(self.base_path, "prepack", os.path.normpath(pdb))
                     elif ("docking" in flag["app"] and not
                     ("-docking_local_refine" in flag.values() or "-docking_local_refine_min" in flag.values())):
-                        flag[k] = os.path.join(self.base_path, "docking", pdb_name)
+                        flag[k] = os.path.join(self.base_path, "docking", os.path.normpath(pdb))
                     elif ("docking" in flag["app"] and
                           ("-docking_local_refine" in flag.values() or "-docking_local_refine_min" in flag.values())):
-                        flag[k] = os.path.join(self.base_path, "refine", pdb_name)
+                        flag[k] = os.path.join(self.base_path, "refine", os.path.normpath(pdb))
                 continue
             if "-run:constant_seed" in k:
                 flag[k] = None
