@@ -48,10 +48,11 @@ class VIPER:
         self.rw.run(RosettaWrapper.Flags.relax_complex_for_REB, options={
             "-in:file:s": os.path.normpath(self.reference_renum_pdb),
             "-out:path:all": intermediary_dir,
-            "-in:file:native": os.path.normpath(self.base_pdb),
+            "-in:file:native": os.path.normpath(self.reference_renum_pdb),
         })
         initials = file_utils.make_pdb_ensemble_list(intermediary_dir,
-                                                     os.path.normpath(os.path.join(intermediary_dir, "..")))
+                                                     os.path.normpath(
+                                                         os.path.join(intermediary_dir, "..", "reference_ensemble")))
         logging.debug(f"Relaxed base PDB and found files '{initials}'")
         best_pdb, scores = RosettaWrapper.ScoreFileParser.get_extremum(
             os.path.normpath(os.path.join(intermediary_dir, "score.sc")),
