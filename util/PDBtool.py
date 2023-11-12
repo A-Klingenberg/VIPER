@@ -1,6 +1,6 @@
 # This code has been adapted from previous work by Austin Seamann, Dario Ghersi, and Ryan Ehrlich.
 # Please refer to https://github.com/Aseamann/ACEdecoy
-
+import collections
 import logging
 import os
 import statistics
@@ -933,7 +933,7 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
         ref_seqs[chain] = get_amino_acids_on_chain(pdb_ref, chain)
         target_seqs[chain] = get_amino_acids_on_chain(pdb, chain)
         if chain in ref_chains:
-            ref_aa[chain] = {}  # Dictionary for num aa: aa of target.
+            ref_aa[chain] = collections.OrderedDict()  # Dictionary for num aa: aa of target.
     with open(pdb_ref, "r") as r:
         for line in r:
             if line[0:6] == 'ATOM  ':  # Only references atoms
@@ -961,7 +961,7 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
         # If there is a gap at the start of the target seq, removes those positions from ref_aa until it matches
         start_of_chain = find_gap(aligns[chain].sequences[0])
         while start_of_chain > 0:
-            ref_aa[chain].popitem()
+            ref_aa[chain].popitem(last=False)
             start_of_chain -= 1
     shortest_num = 10000
     shortest_chain = ""

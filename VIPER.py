@@ -1,3 +1,4 @@
+import copy
 import logging
 import os.path
 import shutil
@@ -69,30 +70,38 @@ class VIPER:
         # Compare residue involvement in all the relaxations of the experimental structure
         relaxed_initials = file_utils.gather_files(os.path.join(cm().get("results_path"), "reference", "intermediary"))
         out_path = os.path.normpath(self.rw.make_dir(["residue_energy_breakdown", "reference_pdb"]))
-        for n, pdb in enumerate(relaxed_initials, start=1):
-            self.rw.run(RosettaWrapper.Flags.residue_energy_breakdown.copy(), options={
-                "-in:file:s": os.path.normpath(pdb),
-                "-out:file:silent": os.path.join(out_path, f"energy_breakdown_{Path(pdb).name[:-4]}_{n}.out"),
-            })
-        energy_breakdowns = file_utils.gather_files(out_path, filetype="out")
-        nlists = []
-        for breakdown in energy_breakdowns:
-            nlists.append(RosettaWrapper.REBprocessor.read_in(breakdown)[0])
-        primary = []
-        for n, nlist in enumerate(nlists):
-            if n == 0:
-                primary = nlist
+        self.rw.run(RosettaWrapper.Flags.residue_energy_breakdown.copy(), options={
+            "-in:file:l": os.path.normpath(os.path.join(cm().get("results_path"), "reference", "reference_ensemble")),
+            "-out:file:silent": os.path.join(out_path,
+                                             f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out")
+        })
+
+        poses = RosettaWrapper.REBprocessor.read_in(
+            os.path.join(out_path, f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out")[0])
+        aggregate = []
+        backup = []
+        first = True
+        for pose, nlist in poses.items():
+            if first:
+                # Add dummy records
+                aggregate = [RosettaWrapper.REBprocessor.Node(n.amino_acid, n.residue_id, n.chain, n.partners.copy(),
+                                                              copy.deepcopy(n.strength)) for n in nlist]
+                backup = [RosettaWrapper.REBprocessor.Node(n.amino_acid, n.residue_id, n.chain, n.partners.copy(),
+                                                           copy.deepcopy(n.strength)) for n in nlist]
+                first = False
             else:
                 for n_index, node in enumerate(nlist):
                     for chain, energy in node.strength.items():
-                        if chain in primary[n_index].strength.items():
-                            primary[n_index].strength[chain] += energy
+                        if chain in aggregate[n_index].strength.items():
+                            aggregate[n_index].strength[chain] += energy
                         else:
-                            primary[n_index].strength[chain] = energy
-        for node in primary:
+                            aggregate[n_index].strength[chain] = energy
+        use_pose = poses.popitem(last=False)
+        for n_index, node in enumerate(aggregate):
             for chain, energy in node.strength.items():
-                node.strength[chain] /= len(nlists)
-        return primary, nlists[0]
+                node.strength[chain] = node.strength[chain] / len(poses)
+
+        return aggregate, backup
 
     def generate_peptide(self):
         pass

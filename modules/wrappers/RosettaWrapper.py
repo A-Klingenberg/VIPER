@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+import collections
 import csv
 import logging
 import os.path
 import re
-import statistics
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from enum import IntEnum
 from io import StringIO
 from pathlib import Path
 from pprint import pformat
-from typing import Union, List, final, Tuple, Dict, Optional
+from typing import Union, List, final, Dict, Optional
 
 import pandas as pd
 
@@ -339,14 +338,15 @@ class REBprocessor:
     """
 
     @staticmethod
-    def read_in(breakdown_file: Union[str, Path]) -> Tuple[List, Dict]:
+    def read_in(breakdown_file: Union[str, Path]) -> collections.OrderedDict[List[Node]]:
         """
         Parses the output from a residue energy breakdown run and prepares it for further analysis.
+        Can read in breakdown from file with multiple poses, returns them as a dict in the form of:
+        {pose_id: [nodes...], ...}
 
         :param breakdown_file:
         :return:
         """
-        totals = []
         logging.info(f"Reading in residue energy breakdown file {breakdown_file}...")
         formatted = ""
         # Reformat to CSV-like
@@ -354,30 +354,33 @@ class REBprocessor:
             pattern = re.compile(" +")
             for line in i:
                 formatted += re.sub(pattern, ",", line)
-        csv = pd.read_csv(StringIO(formatted),
-                          usecols=lambda c: c.upper() in ["PDBID1", "RESTYPE1", "PDBID2", "RESTYPE2", "TOTAL"])
+        breakdown_csv = pd.read_csv(StringIO(formatted),
+                                    usecols=lambda c: c.upper() in ["POSE_ID", "PDBID1", "RESTYPE1", "PDBID2",
+                                                                    "RESTYPE2",
+                                                                    "TOTAL"])
 
         # Get amino acids on chains and interactions per amino acid
-        nlist = []
+        pose_list = collections.OrderedDict()
         seen = {}
-        for row in csv.itertuples(index=False, name="Interaction"):
-            if row.restype2 == "onebody":
+        for row in breakdown_csv.itertuples(index=False, name="Interaction"):
+            if row.pose_id not in pose_list:
+                pose_list[row.pose_id] = []
+                seen[row.pose_id] = {}
+            if row.restype2 == "onebody":  # Ignore onebody interactions
                 continue
             # Create Node and parse data
-            if row.pdbid1 not in seen:
+            if row.pdbid1 not in seen[row.pose_id]:
                 node = REBprocessor.Node(amino_acid=row.restype1, residue_id=int(row.pdbid1[:-1]), chain=row.pdbid1[-1],
                                          partners=[(row.pdbid2, float(row.total))])
                 if row.pdbid2[-1] in node.strength:
                     node.strength[row.pdbid2[-1]] += row.total
                 else:
                     node.strength[row.pdbid2[-1]] = row.total
-                seen[row.pdbid1] = node
-                nlist.append(node)
-                totals.append(row.total)
+                seen[row.pose_id][row.pdbid1] = node
+                pose_list[row.pose_id].append(node)
             else:  # Update Node with parsed data
-                node = seen[row.pdbid1]
+                node = seen[row.pose_id][row.pdbid1]
                 node.partners.append((row.pdbid2, float(row.total)))
-                totals.append(row.total)
                 if row.pdbid2[-1] in node.strength:
                     node.strength[row.pdbid2[-1]] += row.total
                 else:
@@ -393,11 +396,7 @@ class REBprocessor:
             if next_id in seen:
                 node.neighbor_next = seen[next_id]
 
-        stats = {"mean": statistics.mean(totals),
-                 "stdev": statistics.stdev(totals),
-                 "min": min(totals),
-                 "max": max(totals)}
-        return nlist, stats
+        return pose_list
 
     @final
     @dataclass
