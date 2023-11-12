@@ -113,7 +113,7 @@ class RosettaWrapper:
         if ".mpi" in app:
             logging.debug(f"Running Rosetta with MPI...")
             if "residue_energy_breakdown" in app:  # If REB is run with more than -np 1, there are duplicate entries
-                res = subprocess.run(["mpirun", app, "-np 1", "@" + flag], capture_output=True, text=True)
+                res = subprocess.run(["mpirun", "-np", "1", app, "@" + flag], capture_output=True, text=True)
             else:
                 res = subprocess.run(["mpirun", app, "@" + flag], capture_output=True, text=True)
             logging.debug("Stdout from Rosetta run: " + res.stdout)
