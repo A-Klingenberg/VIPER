@@ -112,7 +112,10 @@ class RosettaWrapper:
         flag = os.path.normpath(Path(flag))
         if ".mpi" in app:
             logging.debug(f"Running Rosetta with MPI...")
-            res = subprocess.run(["mpirun", app, "@" + flag], capture_output=True, text=True)
+            if "residue_energy_breakdown" in app:  # If REB is run with more than -np 1, there are duplicate entries
+                res = subprocess.run(["mpirun", app, "-np 1", "@" + flag], capture_output=True, text=True)
+            else:
+                res = subprocess.run(["mpirun", app, "@" + flag], capture_output=True, text=True)
             logging.debug("Stdout from Rosetta run: " + res.stdout)
             if len(res.stderr) > 0:
                 if cm().get("permissive"):
@@ -490,6 +493,7 @@ class Flags:
         "-out:file:silent": None,
         "-run:constant_seed": None,
         "-run:jran": None,
+        "-out:no_color": True,
     }
 
     relax_complex_for_REB: dict = {
@@ -510,6 +514,7 @@ class Flags:
         "-relax:constrain_relax_to_start_coords": None,  # Pin backbone to known position
         "-relax:coord_constrain_sidechains": None,  # Pin heavy atoms in sidechains
         "-relax:ramp_constraints": False,  # Conserve constraints throughout run
+        "-out:no_color": True,
     }
 
     relax_partner_protein: dict = {
@@ -525,6 +530,7 @@ class Flags:
         "-use_input_sc": None,
         "-flip_HNQ": None,
         "-no_optH": None,
+        "-out:no_color": True,
     }
 
     relax_peptide_normal_mode: dict = {
@@ -535,6 +541,7 @@ class Flags:
                                          "normal_mode_relax.xml"),
         "-out:path:all": None,
         "-out:suffix": "_relax_peptide_normal_mode",
+        "-out:no_color": True,
     }
 
     relax_peptide_backbone: dict = {
@@ -544,6 +551,7 @@ class Flags:
         "-backrub:ntrials": None,  # relax_peptide_bb_ntrials
         "-out:path:all": None,
         "-out:suffix": "_relax_peptide_backbone",
+        "-out:no_color": True,
     }
 
     relax_peptide_fast: dict = {
@@ -553,6 +561,7 @@ class Flags:
         "-relax:thorough": None,
         "-out:path:all": None,
         "-out:suffix": "_relax_peptide_fast",
+        "-out:no_color": True,
     }
 
     prepack_complex: dict = {
@@ -567,6 +576,7 @@ class Flags:
         "-ex2aro": None,
         "-out:path:all": None,
         "-out:suffix": "_prepack_complex",
+        "-out:no_color": True,
     }
 
     docking_ensemble: dict = {
@@ -591,6 +601,7 @@ class Flags:
         "-mh:score:use_aa2": "true",
         "-out:path:all": None,
         "-out:suffix": "_docking_ensemble",
+        "-out:no_color": True,
     }
 
     refine_local: dict = {
@@ -604,4 +615,5 @@ class Flags:
         "-out:file:fullatom": None,
         "-out:path:all": None,
         "-out:suffix": "_refine_local",
+        "-out:no_color": True,
     }
