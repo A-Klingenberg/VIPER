@@ -393,13 +393,14 @@ class REBprocessor:
             continue
 
         # Update neighbors
-        for residueid, node in seen.items():
-            prev_id = str(int(residueid[:-1]) - 1) + residueid[-1]
-            if prev_id in seen:
-                node.neighbor_prev = seen[prev_id]
-            next_id = str(int(residueid[:-1]) + 1) + residueid[-1]
-            if next_id in seen:
-                node.neighbor_next = seen[next_id]
+        for pose_id in seen:
+            for residueid, node in seen[pose_id].items():
+                prev_id = str(int(residueid[:-1]) - 1) + residueid[-1]
+                if prev_id in seen:
+                    node.neighbor_prev = seen[prev_id]
+                next_id = str(int(residueid[:-1]) + 1) + residueid[-1]
+                if next_id in seen:
+                    node.neighbor_next = seen[next_id]
 
         return pose_list
 
