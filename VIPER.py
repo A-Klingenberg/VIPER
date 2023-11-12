@@ -60,7 +60,7 @@ class VIPER:
             "total_score")
         logging.debug(f"Best PDB is '{best_pdb}' with score {scores['total_score']}")
         self.reference_renum_relaxed = Path(
-            os.path.join(intermediary_dir, self.base_pdb.name[:-4] + "_relaxed_reference.pdb"))
+            os.path.join(intermediary_dir, "..", self.base_pdb.name[:-4] + "_renum_relaxed.pdb"))
         shutil.copyfile(os.path.join(intermediary_dir, best_pdb + ".pdb"),
                         os.path.join(intermediary_dir, self.reference_renum_relaxed))
         logging.info(f"Finished preparing PDB! Prepared PDB is saved to '{self.reference_renum_relaxed}'")
@@ -68,11 +68,11 @@ class VIPER:
     def do_energy_breakdown(self):
         # Compare residue involvement in all the relaxations of the experimental structure
         relaxed_initials = file_utils.gather_files(os.path.join(cm().get("results_path"), "reference", "intermediary"))
-        out_path = os.path.normpath(self.rw.make_dir(["residue_energy_breakdown", "base_pdb"]))
+        out_path = os.path.normpath(self.rw.make_dir(["residue_energy_breakdown", "reference_pdb"]))
         for n, pdb in enumerate(relaxed_initials, start=1):
             self.rw.run(RosettaWrapper.Flags.residue_energy_breakdown.copy(), options={
                 "-in:file:s": os.path.normpath(pdb),
-                "-out:file:silent": os.path.join(out_path, f"energy_breakdown_{Path(pdb).name}_{n}.out"),
+                "-out:file:silent": os.path.join(out_path, f"energy_breakdown_{Path(pdb).name[:-4]}_{n}.out"),
             })
         energy_breakdowns = file_utils.gather_files(out_path, filetype="out")
         nlists = []
