@@ -45,7 +45,7 @@ class VIPER:
                                                                                             self.base_pdb.name[:-4] +
                                                                                             "_renum.pdb")))
         logging.debug(f"Relaxing renumbered PDB...")
-        self.rw.run(RosettaWrapper.Flags.relax_complex_for_REB, options={
+        self.rw.run(RosettaWrapper.Flags.relax_complex_for_REB.copy(), options={
             "-in:file:s": os.path.normpath(self.reference_renum_pdb),
             "-out:path:all": intermediary_dir,
             "-in:file:native": os.path.normpath(self.reference_renum_pdb),
@@ -70,7 +70,7 @@ class VIPER:
         relaxed_initials = file_utils.gather_files(os.path.join(cm().get("results_path"), "reference", "intermediary"))
         out_path = os.path.normpath(self.rw.make_dir(["residue_energy_breakdown", "base_pdb"]))
         for n, pdb in enumerate(relaxed_initials, start=1):
-            self.rw.run(RosettaWrapper.Flags.residue_energy_breakdown, options={
+            self.rw.run(RosettaWrapper.Flags.residue_energy_breakdown.copy(), options={
                 "-in:file:s": os.path.normpath(pdb),
                 "-out:file:silent": os.path.join(out_path, f"energy_breakdown_{Path(pdb).name}_{n}.out"),
             })
