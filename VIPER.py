@@ -79,29 +79,26 @@ class VIPER:
         poses = RosettaWrapper.REBprocessor.read_in(
             os.path.join(out_path, f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out"))
         aggregate = []
-        backup = []
         first = True
+        num_poses = len(poses)
         for pose, nlist in poses.items():
             if first:
                 # Add dummy records
                 aggregate = [RosettaWrapper.REBprocessor.Node(n.amino_acid, n.residue_id, n.chain, n.partners.copy(),
-                                                              copy.deepcopy(n.strength)) for n in nlist]
-                backup = [RosettaWrapper.REBprocessor.Node(n.amino_acid, n.residue_id, n.chain, n.partners.copy(),
-                                                           copy.deepcopy(n.strength)) for n in nlist]
+                                                              strength=copy.deepcopy(n.strength)) for n in nlist]
                 first = False
             else:
                 for n_index, node in enumerate(nlist):
                     for chain, energy in node.strength.items():
-                        if chain in aggregate[n_index].strength.items():
+                        if chain in aggregate[n_index].strength:
                             aggregate[n_index].strength[chain] += energy
                         else:
                             aggregate[n_index].strength[chain] = energy
-        use_pose = poses.popitem(last=False)
+        use_pose = poses.popitem(last=False)[1]
         for n_index, node in enumerate(aggregate):
             for chain, energy in node.strength.items():
-                node.strength[chain] = node.strength[chain] / len(poses)
-
-        return aggregate, backup
+                use_pose[n_index].strength[chain] = node.strength[chain] / num_poses
+        return use_pose
 
     def generate_peptide(self):
         pass
