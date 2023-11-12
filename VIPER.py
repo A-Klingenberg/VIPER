@@ -60,8 +60,8 @@ class VIPER:
                 os.path.join(intermediary_dir, f"score{RosettaWrapper.Flags.relax_complex_for_REB['-out:suffix']}.sc")),
             "total_score")
         logging.debug(f"Best PDB is '{best_pdb}' with score {scores['total_score']}")
-        self.reference_renum_relaxed = Path(
-            os.path.join(intermediary_dir, "..", self.base_pdb.name[:-4] + "_renum_relaxed.pdb"))
+        self.reference_renum_relaxed = Path(os.path.normpath(
+            os.path.join(intermediary_dir, "..", self.base_pdb.name[:-4] + "_renum_relaxed.pdb")))
         shutil.copyfile(os.path.join(intermediary_dir, best_pdb + ".pdb"),
                         os.path.join(intermediary_dir, self.reference_renum_relaxed))
         logging.info(f"Finished preparing PDB! Prepared PDB is saved to '{self.reference_renum_relaxed}'")
@@ -77,7 +77,7 @@ class VIPER:
         })
 
         poses = RosettaWrapper.REBprocessor.read_in(
-            os.path.join(out_path, f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out")[0])
+            os.path.join(out_path, f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out"))
         aggregate = []
         backup = []
         first = True
