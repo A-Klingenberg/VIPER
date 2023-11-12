@@ -55,7 +55,8 @@ class VIPER:
                                                          os.path.join(intermediary_dir, "..", "reference_ensemble")))
         logging.debug(f"Relaxed base PDB and found files '{initials}'")
         best_pdb, scores = RosettaWrapper.ScoreFileParser.get_extremum(
-            os.path.normpath(os.path.join(intermediary_dir, "score.sc")),
+            os.path.normpath(
+                os.path.join(intermediary_dir, f"score{RosettaWrapper.Flags.relax_complex_for_REB['-out:suffix']}.sc")),
             "total_score")
         logging.debug(f"Best PDB is '{best_pdb}' with score {scores['total_score']}")
         self.reference_renum_relaxed = Path(
