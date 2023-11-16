@@ -22,6 +22,9 @@ def parse_args() -> argparse.Namespace:
                                              "problems which might lead to unexpected behaviour", type=bool,
                         default=True)
     parser.add_argument("--num_CPU_cores", help="How many CPU cores to use", type=int, default=1)
+    parser.add_argument("--vsp_chain", help="The chain id of the viral surface protein", type=str)
+    parser.add_argument("--partner_chain", help="The chain id of the partner protein, for which the"
+                                                "inhibitory peptide candidates shall be generated", type=str)
     # rosetta config
     parser.add_argument("--rosetta_config.path", help="The path to your rosetta executable", type=str)
     parser.add_argument("--rosetta_config.path_out",
@@ -40,6 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rosetta_config.refine_runs", help="How many refinement runs should be run", type=int,
                         default=100)
 
+
     # gromacs config
 
     return parser.parse_args()
@@ -50,20 +54,7 @@ def main() -> None:
     # noinspection PyArgumentList
     ConfigManager(force=True, args=args, base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
     v = VIPER(ConfigManager.get_cm().get("PDB"))
-    v.preprocess_pdb()
-    aggregate, base = v.do_energy_breakdown()
-    print("Aggregate:")
-    for n in aggregate:
-        temp = ""
-        for chain, energy in n.strength.items():
-            temp += f"{chain}: {energy:+.4f}; "
-        print(f"{n.__repr__()} - [{temp}]")
-    print("\nBase:")
-    for n in base:
-        temp = ""
-        for chain, energy in n.strength.items():
-            temp += f"{chain}: {energy:+.4f}; "
-        print(f"{n.__repr__()} - [{temp}]")
+    v.run()
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from typing import List, final, Type
 
 import ConfigManager
 from modules.wrappers.RosettaWrapper import REBprocessor
+from util import PDBtool
 
 cm = ConfigManager.ConfigManager.get_cm
 
@@ -24,9 +25,48 @@ class PeptideGenerator:
 
 
 class _SelectionStrategies:
+
+    @staticmethod
+    def add_linkers(nlist: List[REBprocessor.Node], respect_length_limit: bool = False) -> List[REBprocessor.Node]:
+        linker = cm().get("peptide_generator.linker")
+        if linker is None:
+            linker = "GG"  # default is polyglycine
+        increase_id_by = 0
+        last_node = None
+        new_list = []
+        for node in nlist:
+            if last_node is None:
+                new_list.append(REBprocessor.Node(amino_acid=node.amino_acid,
+                                                  residue_id=node.residue_id + increase_id_by,
+                                                  chain=node.chain))
+                continue
+            if abs((node.residue_id + increase_id_by) - last_node.residue_id) > 1:  # Jump in the sequence, need linker
+                base_id = last_node.residue_id
+                if respect_length_limit and len(new_list) + len(linker) >= cm().get("peptide_generator.max_length"):
+                    raise IndexError("Cannot insert")
+                for element in linker:
+                    base_id += 1
+                    increase_id_by += 1
+                    linker_node = REBprocessor.Node(amino_acid=PDBtool.one_to_three(element),
+                                                    residue_id=base_id,
+                                                    chain=last_node.chain,
+                                                    neighbor_prev=new_list[-1])
+                    new_list[-1].neighbor_next = linker_node
+                    new_list.append(linker_node)
+                    last_node = linker_node
+            else:
+                add_node = REBprocessor.Node(amino_acid=node.amino_acid,
+                                             residue_id=node.residue_id + increase_id_by,
+                                             chain=node.chain,
+                                             neighbor_prev=new_list[-1])
+                new_list[-1].neighbor_next = add_node
+                new_list.append(add_node)
+        return new_list
+
     class SelectionStrategy(metaclass=ABCMeta):
         """
-        Defines behavior a selection strategy needs to implement. Namely, given a list of nodes
+        Defines behavior a selection strategy needs to implement. Namely, given a list of nodes, generate a peptide
+        candidate.
         """
 
         def __init__(self):
@@ -39,8 +79,8 @@ class _SelectionStrategies:
             self.length_damping = cm().get("peptide_generator.length_damping")
             self.ld_min_length = abs(cm().get("peptide_generator.length_damping_min_length"))
             self.ld_max_length = abs(cm().get("peptide_generator.length_damping_max_length"))
-            self.ld_initial_mult = abs(cm().get("peptide_generator.length_damping_initial_bonus"))
-            self.ld_final_mult = abs(cm().get("peptide_generator.length_damping_max_penalty"))
+            self.ld_initial_mult = abs(cm().get("peptide_generator.length_damping_initial_mult"))
+            self.ld_final_mult = abs(cm().get("peptide_generator.length_damping_final_mult"))
             self.ld_linear_stepping = cm().get("peptide_generator.length_damping_linear_stepping")
             if m := cm().get("peptide_generator.length_damping_mode"):
                 if m.upper() == "QUADRATIC":
@@ -202,7 +242,8 @@ class _SelectionStrategies:
                 sys.exit(1)
             for residue in sorted(elligible_nodes, key=lambda node: node.strength[to_chain], reverse=False):
                 _include(final_residues, residue)
-            return sorted(final_residues, key=lambda node: node.residue_id, reverse=False)
+            return _SelectionStrategies.add_linkers(
+                sorted(final_residues, key=lambda node: node.residue_id, reverse=False))
 
     @final
     class FragmentJoiner(SelectionStrategy):
@@ -351,7 +392,8 @@ class _SelectionStrategies:
 
             print(pprint.pformat(temp))
 
-            return sorted(final_peptide, key=lambda node: node.residue_id, reverse=False)
+            return _SelectionStrategies.add_linkers(
+                sorted(final_peptide, key=lambda node: node.residue_id, reverse=False))
 
     @staticmethod
     def get_strategy(strategy: str = None) -> Type[_SelectionStrategies.SelectionStrategy]:

@@ -10,6 +10,7 @@
     "path_out": "rosetta_output",
     "random_seed": 3333333,
     "archive_intermediate": true,
+    "prerelax_complex_runs": 100,
     "relax_partner_runs": 100,
     "relax_peptide_nmr_runs": 40,
     "relax_peptide_bb_runs": 30,
@@ -60,7 +61,7 @@
     }
   },
   "pepstrmod_config": {
-    "email": "",
+    "email": " ",
     "simulation_time": "100ps",
     "environment": "vac",
     "download_topology": true,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import copy
 import csv
 import logging
 import os.path
@@ -11,7 +12,7 @@ from enum import IntEnum
 from io import StringIO
 from pathlib import Path
 from pprint import pformat
-from typing import Union, List, final, Dict, Optional
+from typing import Union, List, final, Optional
 
 import pandas as pd
 
@@ -216,6 +217,7 @@ class RosettaWrapper:
             logging.error(f"Could not preprocess options, because application '{flag['app']}' is unknown!")
             raise LookupError(f"Could not preprocess options, because application '{flag['app']}' is unknown!")
         for k, v in flag.items():
+            # TODO: Maybe just check for absence of "in" and "out" params instead of trying to fill it in?
             if "-in:file" in k and v is None:
                 if pdb:
                     flag[k] = os.path.normpath(pdb)
@@ -346,6 +348,17 @@ class REBprocessor:
     """
 
     @staticmethod
+    def process_multipose(breakdown_file: Union[str, Path]) -> List[Node]:
+        """
+        Helper method to combine parsing of (multipose) residue energy breakdown file and calculate
+        average energies per residue across all poses. Assumes that all poses are of the same molecules!
+
+        :param breakdown_file: Path to breakdown file to be read
+        :return: A list of Node objects with averaged interaction energies
+        """
+        return REBprocessor.get_avg_nodes(REBprocessor.read_in(breakdown_file))
+
+    @staticmethod
     def read_in(breakdown_file: Union[str, Path]) -> collections.OrderedDict[List[Node]]:
         """
         Parses the output from a residue energy breakdown run and prepares it for further analysis.
@@ -399,13 +412,46 @@ class REBprocessor:
         for pose_id in seen:
             for residueid, node in seen[pose_id].items():
                 prev_id = str(int(residueid[:-1]) - 1) + residueid[-1]
-                if prev_id in seen:
-                    node.neighbor_prev = seen[prev_id]
+                if prev_id in seen[pose_id]:
+                    node.neighbor_prev = seen[pose_id][prev_id]
                 next_id = str(int(residueid[:-1]) + 1) + residueid[-1]
-                if next_id in seen:
-                    node.neighbor_next = seen[next_id]
+                if next_id in seen[pose_id]:
+                    node.neighbor_next = seen[pose_id][next_id]
 
         return pose_list
+
+    @staticmethod
+    def get_avg_nodes(poses: collections.OrderedDict[List[Node]]) -> List[Node]:
+        """
+        Averages interaction energies for all residues in each pose
+        :param poses: The output from the read_in() - A OrderedDict of {pose: List[Node], ...}
+        :return: A list of nodes with averaged interaction energies
+        """
+        aggregate = []
+        first = True
+        num_poses = len(poses)
+        if num_poses == 1:
+            return poses.popitem()[1]
+        for pose, nlist in poses.items():
+            if first:
+                # Get placeholder nodes for averaging energies
+                aggregate = [REBprocessor.Node(n.amino_acid, n.residue_id, n.chain, n.partners.copy(),
+                                               strength=copy.deepcopy(n.strength)) for n in nlist]
+                first = False
+            else:
+                # Sum all energies for each residue
+                for n_index, node in enumerate(nlist):
+                    for chain, energy in node.strength.items():
+                        if chain in aggregate[n_index].strength:
+                            aggregate[n_index].strength[chain] += energy
+                        else:
+                            aggregate[n_index].strength[chain] = energy
+        # Divide by number of poses, save averaged energies from placeholder to actual nodes (which have neighbors etc.)
+        use_pose = poses.popitem(last=False)[1]
+        for n_index, node in enumerate(aggregate):
+            for chain, energy in node.strength.items():
+                use_pose[n_index].strength[chain] = node.strength[chain] / num_poses
+        return use_pose
 
     @final
     @dataclass
@@ -489,7 +535,6 @@ class REBprocessor:
 class Flags:
     residue_energy_breakdown: dict = {
         "app": "residue_energy_breakdown",
-        "-in:file:s": None,
         "-out:file:silent": None,
         "-run:constant_seed": None,
         "-run:jran": None,

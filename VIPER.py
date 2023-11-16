@@ -1,12 +1,13 @@
-import copy
 import logging
 import os.path
 import shutil
 from pathlib import Path
-from typing import Union
+from typing import Union, List
 
 import ConfigManager
+from modules.stages import PeptideGenerator
 from modules.wrappers import RosettaWrapper
+from modules.wrappers.PEPstrMODWrapper import PEPstrMODWrapper
 from util import file_utils, PDBtool
 
 cm = ConfigManager.ConfigManager.get_cm
@@ -18,11 +19,15 @@ class VIPER:
     reference_renum_pdb = None
     reference_renum_relaxed = None
     rw = None
-    chains = {}
+    selection_strat = None
+    candidate_counter = 0
 
     def __init__(self, pdb: Union[str, Path]):
         self.rw = RosettaWrapper.RosettaWrapper()
         self.base_pdb = Path(pdb)
+        self.reference_renum_relaxed = Path("6m0j_renum_relaxed.pdb")
+        self.selection_strat = PeptideGenerator._SelectionStrategies.get_strategy()()
+        self.candidate_counter = 0
         pass
 
     def run(self):
@@ -32,9 +37,31 @@ class VIPER:
         :return:
         """
         self.preprocess_pdb()
-        self.do_energy_breakdown()
-
-        pass
+        nlist = self.do_energy_breakdown()
+        candidate = self.generate_peptide(nlist)
+        peptide_structure = self.get_tertiary_structure(candidate,
+                                                        ["candidates", str(self.candidate_counter), f"candidate.pdb"])
+        p, _ = PDBtool.superimpose_single(os.path.normpath(peptide_structure),
+                                          os.path.normpath(self.reference_renum_relaxed),
+                                          query_chain=f"{PDBtool.get_chains(os.path.normpath(peptide_structure))[0]}",
+                                          ref_chain=f"{cm().get('partner_chain')}",
+                                          out_path=["candidates", str(self.candidate_counter), f"superimposed.pdb"])
+        curr_candidate_dir = Path(os.path.join(cm().get("results_path"), "candidates", str(self.candidate_counter)))
+        # Do a fast relaxation of the peptide while it is pinned in place
+        self.rw.run(RosettaWrapper.Flags.relax_complex_for_REB.copy(), options={
+            "-in:file:s": os.path.normpath(p),
+            "-out:path:all": os.path.join(curr_candidate_dir, "relax"),
+            "-in:file:native": os.path.normpath(self.reference_renum_pdb),
+        })
+        # Do residue energy breakdown to get binding energy
+        self.rw.run(RosettaWrapper.Flags.residue_energy_breakdown.copy(), options={
+            "-in:file:l": os.path.normpath(
+                file_utils.make_pdb_ensemble_list(os.path.join(curr_candidate_dir, "relax"),
+                                                  os.path.join(curr_candidate_dir,
+                                                               f"candidate_{self.candidate_counter}_relax_ensemble"))),
+            "-out:file:silent": os.path.join(curr_candidate_dir,
+                                             f"energy_breakdown_candidate{self.candidate_counter}_ensemble.out")
+        })
 
     def preprocess_pdb(self):
         logging.info(f"Preprocessing PDB '{self.base_pdb}'...")
@@ -50,14 +77,17 @@ class VIPER:
             "-in:file:s": os.path.normpath(self.reference_renum_pdb),
             "-out:path:all": intermediary_dir,
             "-in:file:native": os.path.normpath(self.reference_renum_pdb),
+            "-nstruct": cm().get("rosetta_config.prerelax_complex_runs"),
         })
         initials = file_utils.make_pdb_ensemble_list(intermediary_dir,
                                                      os.path.normpath(
-                                                         os.path.join(intermediary_dir, "..", "reference_ensemble")))
+                                                         os.path.join(intermediary_dir, "..",
+                                                                      "reference_ensemble")))
         logging.debug(f"Relaxed base PDB and found files '{initials}'")
         best_pdb, scores = RosettaWrapper.ScoreFileParser.get_extremum(
             os.path.normpath(
-                os.path.join(intermediary_dir, f"score{RosettaWrapper.Flags.relax_complex_for_REB['-out:suffix']}.sc")),
+                os.path.join(intermediary_dir,
+                             f"score{RosettaWrapper.Flags.relax_complex_for_REB['-out:suffix']}.sc")),
             "total_score")
         logging.debug(f"Best PDB is '{best_pdb}' with score {scores['total_score']}")
         self.reference_renum_relaxed = Path(os.path.normpath(
@@ -68,43 +98,27 @@ class VIPER:
 
     def do_energy_breakdown(self):
         # Compare residue involvement in all the relaxations of the experimental structure
-        relaxed_initials = file_utils.gather_files(os.path.join(cm().get("results_path"), "reference", "intermediary"))
         out_path = os.path.normpath(self.rw.make_dir(["residue_energy_breakdown", "reference_pdb"]))
         self.rw.run(RosettaWrapper.Flags.residue_energy_breakdown.copy(), options={
-            "-in:file:l": os.path.normpath(os.path.join(cm().get("results_path"), "reference", "reference_ensemble")),
+            "-in:file:l": os.path.normpath(
+                os.path.join(cm().get("results_path"), "reference", "reference_ensemble")),
             "-out:file:silent": os.path.join(out_path,
                                              f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out")
         })
-
-        poses = RosettaWrapper.REBprocessor.read_in(
+        return RosettaWrapper.REBprocessor.process_multipose(
             os.path.join(out_path, f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out"))
-        aggregate = []
-        first = True
-        num_poses = len(poses)
-        for pose, nlist in poses.items():
-            if first:
-                # Add dummy records
-                aggregate = [RosettaWrapper.REBprocessor.Node(n.amino_acid, n.residue_id, n.chain, n.partners.copy(),
-                                                              strength=copy.deepcopy(n.strength)) for n in nlist]
-                first = False
-            else:
-                for n_index, node in enumerate(nlist):
-                    for chain, energy in node.strength.items():
-                        if chain in aggregate[n_index].strength:
-                            aggregate[n_index].strength[chain] += energy
-                        else:
-                            aggregate[n_index].strength[chain] = energy
-        use_pose = poses.popitem(last=False)[1]
-        for n_index, node in enumerate(aggregate):
-            for chain, energy in node.strength.items():
-                use_pose[n_index].strength[chain] = node.strength[chain] / num_poses
-        return use_pose
 
-    def generate_peptide(self):
-        pass
+    def generate_peptide(self, nlist: List[RosettaWrapper.REBprocessor.Node]) -> List[RosettaWrapper.REBprocessor.Node]:
+        candidate = self.selection_strat.reduce(from_chain=cm().get("partner_chain"),
+                                                to_chain=cm().get("vsp_chain"),
+                                                nodes=nlist)
+        return candidate
 
-    def get_tertiary_structure(self):
-        pass
+    def get_tertiary_structure(self, sequence: List[RosettaWrapper.REBprocessor.Node],
+                               save_out: List[Union[str, Path]]) -> Path:
+        peptide_sequence = "".join([PDBtool.three_to_one(n.amino_acid) for n in sequence])
+        structure_pdb = PEPstrMODWrapper.submit_peptide(sequence=peptide_sequence)
+        return file_utils.make_file(path=save_out, content=structure_pdb)
 
     def prepare_docking(self):
         pass

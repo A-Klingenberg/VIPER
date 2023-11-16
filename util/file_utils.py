@@ -1,7 +1,13 @@
+import logging
 import os
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Union, List
+
+from ConfigManager import ConfigManager
+
+cm = ConfigManager.get_cm
 
 
 def compress_directory(directory: Union[str, Path], archive_name: Union[str, Path],
@@ -74,3 +80,45 @@ def gather_files(directory: Union[str, Path], filetype: str = "pdb", recursive: 
         for file in directory.glob(f"*.{filetype}"):
             paths.append(file)
     return paths
+
+
+def make_file(path: Union[str, Path, List[Union[str, Path]]], content: str, dry_run: bool = False) -> Path:
+    """
+    Writes a file with content 'content' to the results path, creating any subdirectories as needed.
+    The path will be based off the results path, so do not use absolute paths!
+    Instead, use a list with directory names and end it with the filename.
+
+    :param path: Where to write the file to
+    :param content: What to write to the file
+    :param dry_run: Whether or not to actually write to the file - True means that the path will be validated and any
+        necessary subdirectories created, but the file _won't_ actually be written out!
+    :return: A Path object to the written out file
+    """
+    p = path
+    if isinstance(path, str) or isinstance(path, Path):
+        p = [Path(path)]
+    for index, elem in enumerate(p):
+        if isinstance(elem, Path) and elem.is_absolute():
+            logging.warning(f"You can't pass an absolute path ({elem}) to make_file()!")
+            raise ValueError(f"You can't pass an absolute path ({elem}) to make_file()!")
+        p[index] = Path(elem)
+    fname = ""
+    if p[-1].is_dir():
+        if cm().get("permissive"):
+            fname = str(uuid.uuid4())
+            logging.warning(f"The passed path '{p}' is a directory! Using '{fname}' as filename.")
+        else:
+            logging.error(f"The path '{p}' leads to a directory! Can only write to a file!")
+            raise ValueError(f"The path '{p}' leads to a directory! Can only write to a file!")
+    use_path = os.path.normpath(cm().get("results_path"))
+    for elem in p:
+        use_path = os.path.join(use_path, elem)
+    use_path = Path(os.path.normpath(use_path))
+    os.makedirs(use_path.parents[0], exist_ok=True)
+    if not dry_run:
+        with open(use_path, "w") as f:
+            f.write(content)
+            logging.info(f"Wrote out file '{use_path}'")
+    else:
+        logging.info(f"Did dry run of make_file() for '{use_path}'")
+    return use_path

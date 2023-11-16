@@ -26,7 +26,7 @@ class PEPstrMODWrapper:
         """
         # TODO: Find out hardcoded values for all environment options
         form_data = {
-            "MAX_FILE_SIZE": 1000000,
+            "MAX_FILE_SIZE": str(1000000),
             "seq": sequence,
             "email": cm().get("pepstrmod_config.email"),
             "time": cm().get("pepstrmod_config.simulation_time"),
@@ -42,6 +42,7 @@ class PEPstrMODWrapper:
             for k, v in options.items():
                 form_data[k] = v
 
+        # TODO: Do this by hand, so that the dependency can be dropped
         multipart_data = MultipartEncoder(
             fields={
                 "MAX_FILE_SIZE": form_data["MAX_FILE_SIZE"],

@@ -3,6 +3,7 @@
 import collections
 import logging
 import os
+import pprint
 import statistics
 import sys
 from math import sqrt
@@ -12,16 +13,20 @@ from typing import Optional, List, Union, Tuple
 import Bio
 import numpy as np
 from Bio import Align
+from Bio.PDB import PDBParser
 from scipy.spatial.transform import Rotation
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KDTree
 
 from ConfigManager import ConfigManager
 from modules.wrappers.RosettaWrapper import REBprocessor
+from util import file_utils
 
 cm = ConfigManager.get_cm
 
 TOOL_VER = "2.0"
+
+# TODO: Make sure all methods accept Paths as well as str
 
 # These types of PDB records will be carried / written over into the newly generated file when PDBs are modified
 KEEP_LINES = ["HEADER", "REMARK", "SSBOND", "ATOM  ", "TER   ", "END   "]
@@ -285,8 +290,9 @@ def euclidean_of_atoms(pdb: str, atom_num_1: int, atom_num_2: int) -> Optional[f
         if cm().get("permissive"):
             return None
         else:
-            raise ValueError(f"Tried to compute euclidean distance between atom {atom_num_1} and {atom_num_2} in '{pdb}' but failed!"
-                             f"One of the two atoms could not be found!")
+            raise ValueError(
+                f"Tried to compute euclidean distance between atom {atom_num_1} and {atom_num_2} in '{pdb}' but failed!"
+                f"One of the two atoms could not be found!")
     else:
         euclidean_distance = sqrt(
             (atom_2['X'] - atom_1['X']) ** 2 + (atom_2['Y'] - atom_1['Y']) ** 2 + (atom_2['Z'] - atom_1['Z']) ** 2)
@@ -443,23 +449,29 @@ def remove_chain(pdb: str, chain_id: List[str], rename: str = None) -> None:
 
 
 # FIXME: Produces faulty PDB? When written out, there is data following TER in the same line
-def superimpose(pdb: str, ref_pdb: str, target_order: str, ref_order: str, rename: bool = None) -> float:
+def superimpose_multiple(pdb: str, ref_pdb: str, target_order: str, ref_order: str,
+                         path: Union[str, Path, List[Union[str, Path]]]) -> Tuple[Path, float]:
     """
     Superimpose two PDBs.
     Read in target and reference structure, superimpose target to reference, save superimposed target structure.
+    Writes the result to 'path' appended to the results path, creating any subdirectories as needed.
+    The path will be based off the results path, so do not use absolute paths!
+    Instead, use a list with directory names and end it with the filename.
 
     :param pdb: Location of target PDB
     :param ref_pdb: Location of reference PDB
     :param target_order: Order of chains to compare in superimposing structures for target
     :param ref_order: Order of chains to compare in superimposing structures for reference
-    :param rename: Optional name in for resulting superimposed positioning of target structure
+    :param path: Where to write the file to
     :return RMSD value for all-atom RMSD
     """
-    aligner = Align.PairwiseAligner()
+    aligner = Bio.Align.PairwiseAligner()
     aligner.mode = 'local'
     aligner.gap_score = -100.00
     aligner.match_score = 2.0
     aligner.mismatch_score = 0.0
+
+    logging.warning(f"Please use superimpose_single() multiple times instead!")
 
     logging.info(f"Trying to superimpose {pdb} onto {ref_pdb} with chain order {target_order} (target) and "
                  f"{ref_order} (reference).")
@@ -504,9 +516,9 @@ def superimpose(pdb: str, ref_pdb: str, target_order: str, ref_order: str, renam
         target_chain = target_seq[target_pos[chain_pos]]
         reference_chain = ref_seq[ref_pos[chain_pos]]
         temp_align = aligner.align(target_chain, reference_chain)
-        logging.log(logging.INFO, f"Target Chain: {target_pos[chain_pos]}")
-        logging.log(logging.INFO, f"Reference Chain: {ref_pos[chain_pos]}")
-        logging.log(logging.INFO, f"{temp_align[0]}")
+        logging.debug(f"Target Chain: {target_pos[chain_pos]}")
+        logging.debug(f"Reference Chain: {ref_pos[chain_pos]}")
+        logging.debug(f"{temp_align[0]}")
 
         start_pos['target'][target_pos[chain_pos]] = [temp_align[0].path[0][0], temp_align[0].path[1][0]]
         start_pos['reference'][ref_pos[chain_pos]] = [temp_align[0].path[0][1], temp_align[0].path[1][1]]
@@ -593,11 +605,123 @@ def superimpose(pdb: str, ref_pdb: str, target_order: str, ref_order: str, renam
     logging.info(
         f"Stats for superimposed structures - RMSD: {super_imposer.rms}, Atoms Pulled: {str(len(target_atoms))}")
     io.set_structure(target_structure)
-    new_name = pdb[:-4] + "_aligned.pdb"
-    if rename:
-        new_name = rename
-    io.save(new_name)
-    return super_imposer.rms
+
+    p = file_utils.make_file(path, "", dry_run=True)
+    io.save(p)
+    return p, super_imposer.rms
+
+
+def superimpose_single(pdb: Union[str, Path], ref_pdb: Union[str, Path], query_chain: str, ref_chain: str,
+                       out_path: Union[str, Path, List[Union[str, Path]]],
+                       aligner: Bio.Align.PairwiseAligner = None) -> Tuple[Path, float]:
+    """
+    Superimposes a single chain from pdb on to a single chain from ref_pdb. Performs an alignment first, such that the
+    largest possible subsequence without creating a gap while accepting mismatches gets aligned, unless a customer
+    aligner is supplied. When using the standard, this only uses the alpha carbons to superimpose the backbone.
+    Writes _only_ the superimposed pdb chain to out_path, a file/list of directories + file in the
+    overall results_path.
+
+    :param pdb: The pdb from which to take the chain that should be superimposed
+    :param ref_pdb: The reference pdb, on which the chain should be superimposed
+    :param query_chain: Which chain from pdb to superimpose
+    :param ref_chain: Which chain from ref_pdb to superimpose on to
+    :param out_path: Where to write out the superimposed chain PDB file
+    :param aligner: (Optional) A custom aligner for determining which atoms should be used for calculating the
+        translation and rotation to superimpose on to the reference
+    :return: A tuple of the path to where the PDB was written and the superimposer RMSD
+    """
+    logging.info(f"Trying to superimpose {pdb}, chain {query_chain} onto {ref_pdb}, chain {ref_chain}...")
+    try:
+        query_pdb = Path(pdb).resolve(strict=True)
+        ref_pdb = Path(ref_pdb).resolve(strict=True)
+    except (FileNotFoundError, RuntimeError) as e:
+        logging.error(f"Couldn't resolve a path you provided. Stacktrace: {e}")
+        raise e
+
+    pdb_parser = Bio.PDB.PDBParser()
+    query_chain_struc = pdb_parser.get_structure(query_pdb.name, query_pdb)[0][query_chain]
+    ref_chain_struc = pdb_parser.get_structure(ref_pdb.name, ref_pdb)[0][ref_chain]
+    query_seq = [(residue.id, three_to_one(residue.resname, "X")) for residue in query_chain_struc.get_residues()]
+    ref_seq = [(residue.id, three_to_one(residue.resname, "X")) for residue in ref_chain_struc.get_residues()]
+    query_aaseq = "".join([residue[1] for residue in query_seq])
+    ref_aaseq = "".join([residue[1] for residue in ref_seq])
+
+    if aligner is None:
+        aligner = Bio.Align.PairwiseAligner()
+        aligner.mode = 'local'
+        aligner.gap_score = -100.0  # penalize gaps so that the largest subsection gets aligned
+        aligner.match_score = 2.0
+        aligner.mismatch_score = 0.0  # allow mismatches within subsection
+    alignment = aligner.align(ref_aaseq, query_aaseq)  # where in ref is target?
+    # Determine best alignment
+    curr_best = None
+    for a in alignment:
+        if curr_best is None:
+            curr_best = a
+            continue
+        if a.score > curr_best.score:
+            curr_best = a
+    logging.debug(f"Best alignment: {str(curr_best)}")
+
+    query_aligned = curr_best.query  # We're querying the ref chain as to where the target chain is, so that we know at
+    ref_aligned = curr_best.target  # which residue in ref the target chain appears, therefore _target_ is the reference
+    # Which residue id in the reference corresponds to which residue id in the queried pdb?
+    residue_id_map = {}
+    # .aligned has format:
+    # [[[ target_start, target_end ]] [[ query_start, query_end ]]]
+    query_start, query_end = curr_best.aligned[1][0][0], curr_best.aligned[1][0][1]
+    ref_start, ref_end = curr_best.aligned[0][0][0], curr_best.aligned[0][0][1]
+
+    query_offset = query_start
+    ref_offset = ref_start
+    for (ref_aa, query_aa) in zip((ref_aligned[ref_start:ref_end]), query_aligned[query_start:query_end]):
+        # Since the penalty for gaps is so high, there probably shouldn't be any in the output. This is just for
+        # safety
+        if ref_aa == "-":
+            if query_aa != "-":  # Gap in ref
+                query_offset += 1
+                continue
+        if query_aa == "-":
+            if ref_aa != "-":  # Gap in query
+                ref_offset += 1
+                continue
+        # We're allowing mismatches within the sequence to enable us to modify the peptide later on and still align it
+        # Therefore we might map different amino acids on to each other!
+        residue_id_map[ref_seq[ref_offset][0]] = query_seq[query_offset][0]
+        query_offset += 1
+        ref_offset += 1
+    logging.debug(f"The residue id mapping (ref -> query) is: {pprint.pformat(residue_id_map)}")
+
+    ref_atom_list = []
+    query_atom_list = []
+    for residue in residue_id_map:
+        # Only add alpha carbons to align backbone, maybe relaxation is necessary afterwards?
+        ref_atom_list.append(ref_chain_struc[residue]["CA"])
+        query_atom_list.append(query_chain_struc[residue_id_map[residue]]["CA"])
+
+    superimposer = Bio.PDB.Superimposer()
+    superimposer.set_atoms(ref_atom_list, query_atom_list)
+    superimposer.apply(query_chain_struc.get_atoms())
+    logging.info(f"Successfully superimposed structures with RMSD: {superimposer.rms:+.4f}")
+
+    p = file_utils.make_file(out_path, "", dry_run=True)
+    logging.info(f"Writing out superimposed pdb to '{p}'")
+    pdb_io = Bio.PDB.PDBIO()
+    pdb_io.set_structure(query_chain_struc)
+    pdb_io.save(os.path.normpath(p))
+    # Clean up resultant PDB, pdb_io.save() is buggy and writes data after the TER record to the file.
+    buf = ""
+    with open(p, "r") as out_pdb:
+        for line in out_pdb:
+            if line[0:3] == "TER":
+                buf += "TER\n"
+            else:
+                buf += line
+    os.remove(p)  # remove malformed PDB
+    with open(p, "x+") as pdb_out:
+        pdb_out.write(buf)
+
+    return p, superimposer.rms
 
 
 def rmsd(pdb: str, ref_pdb: str, target_order: str, ref_order: str, ca: bool = False) -> float:
@@ -634,7 +758,7 @@ def rmsd(pdb: str, ref_pdb: str, target_order: str, ref_order: str, ca: bool = F
         ref_aa[chain] = get_amino_acids_on_chain(ref_pdb, chain)
     # Return to previous PDB
     # Run alignment
-    aligner = Align.PairwiseAligner()
+    aligner = Bio.Align.PairwiseAligner()
     aligner.mode = 'local'
     aligner.gap_score = -100.00
     aligner.match_score = 2.0
@@ -942,7 +1066,7 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
                         int(line[section_residue_number[0]:section_residue_number[1]])] = line[section_residue[0]:
                                                                                                section_residue[1]]
     aligns = {}  # alignments to determine start of chain number if they don't start at the same point
-    aligner = Align.PairwiseAligner()
+    aligner = Bio.Align.PairwiseAligner()
     aligner.mode = "global"
     aligner.match_score = 2
     aligner.mismatch_score = -1
