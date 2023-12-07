@@ -1,3 +1,4 @@
+import copy
 import logging
 import os
 import uuid
@@ -94,9 +95,9 @@ def make_file(path: Union[str, Path, List[Union[str, Path]]], content: str, dry_
         necessary subdirectories created, but the file _won't_ actually be written out!
     :return: A Path object to the written out file
     """
-    p = path
+    p = copy.deepcopy(path)
     if isinstance(path, str) or isinstance(path, Path):
-        p = [Path(path)]
+        p = [copy.deepcopy(Path(path))]
     for index, elem in enumerate(p):
         if isinstance(elem, Path) and elem.is_absolute():
             logging.warning(f"You can't pass an absolute path ({elem}) to make_file()!")

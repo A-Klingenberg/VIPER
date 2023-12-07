@@ -1,7 +1,5 @@
 """
 The ConfigManager parses, stores, and makes all configuration data available within VIPER.
-
-Version: 2023-09-27
 """
 import argparse
 import json
@@ -28,6 +26,8 @@ class _Singleton(type):
         if c := cls._instances.get(cls, None):
             return c
         else:
+            # Modify if you want to allow the usage of the ConfigManager before it is initialized, i. e.
+            # if you want to construct a ConfigManager on demand if it is accessed but not initialized
             print("Trying to use ConfigManager before it has been initialized!")
             raise RuntimeError("Trying to use ConfigManager before it has been initialized!")
 

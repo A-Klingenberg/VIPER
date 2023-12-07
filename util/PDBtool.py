@@ -24,7 +24,7 @@ from util import file_utils
 
 cm = ConfigManager.get_cm
 
-TOOL_VER = "2.0"
+TOOL_VER = "0.2.1_alpha"
 
 # TODO: Make sure all methods accept Paths as well as str
 
@@ -55,7 +55,7 @@ section_ssbond_residue_id2 = [31, 35]
 section_ssbond_chain_id2 = 29
 
 
-def get_chains(pdb: str) -> Optional[list]:
+def get_chains(pdb: Union[str, Path]) -> Optional[list]:
     """
     Returns a list of all chains in PDB file.
 
@@ -80,17 +80,21 @@ def get_chains(pdb: str) -> Optional[list]:
     return chains
 
 
-def get_amino_acids_on_chain(pdb: str, chain: str) -> str:
+def get_amino_acids_on_chain(pdb: Union[str, Path], chain: str, with_id: bool = False) -> Union[
+    str, List[Tuple[str, int]]]:
     """
     Returns the string of amino acids in a specific chain as a string in single letter notation.
 
     :param pdb: Path to PDB file to read
     :param chain: Which chain to read
+    :param with_id: Whether to also return the residue id for each amino acid.
     :return: String of amino acids in single letter formatting. The string may be empty if chain can't be found in PDB
-        and VIPER is running in permissive mode
+        and VIPER is running in permissive mode. If with_id = True, instead returns a list of amino acid-residue id tuples
     """
     logging.debug(f"Trying to get amino acid sequence of chain '{chain}' in '{pdb}'...")
     output = ''
+    if with_id:
+        output = []
     flag = True
     with open(pdb, 'r') as file:
         for line in file:
@@ -101,7 +105,10 @@ def get_amino_acids_on_chain(pdb: str, chain: str) -> str:
                         flag = False
                     if count == int(line[section_residue_number[0]:section_residue_number[1]]):
                         if line[section_altloc] != 'B':
-                            output += three_to_one(line[section_residue[0]:section_residue[1]])
+                            if with_id:
+                                output.append((three_to_one(line[section_residue[0]:section_residue[1]]), count))
+                            else:
+                                output += three_to_one(line[section_residue[0]:section_residue[1]])
                             count += 1
                     elif count < int(line[section_residue_number[0]:section_residue_number[1]]):
                         count = int(line[section_residue_number[0]:section_residue_number[1]])
@@ -109,7 +116,7 @@ def get_amino_acids_on_chain(pdb: str, chain: str) -> str:
     if len(output) == 0:
         logging.error(f"Couldn't find any amino acid in chain '{chain}' in '{pdb}'!")
         if not cm().get("permissive"):
-            sys.exit(1)
+            raise ValueError(f"Couldn't find any amino acid in chain '{chain}' in '{pdb}'!")
     return output
 
 
@@ -130,6 +137,8 @@ def three_to_one(three: str, default: str = "") -> str:
     }
     if three.upper() in translate:
         return translate[three.upper()]
+    elif three.upper() in translate.values():
+        return three.upper()
     else:
         logging.log(logging.WARN, f"Tried to convert '{three}' to single letter amino acid abbreviation but failed!")
         if default:
@@ -155,6 +164,8 @@ def one_to_three(one: str, default: str = "   ") -> str:
     }
     if one.upper() in translate:
         return translate[one.upper()]
+    elif one.upper() in translate.values():
+        return one.upper()
     else:
         logging.log(logging.WARN, f"Tried to convert '{one}' to three letter amino acid abbreviation but failed!")
         if default:
@@ -213,7 +224,7 @@ def get_atom(pdb: str, atom_num: int) -> Optional[dict]:
             if line[0:6] == 'ATOM  ':
                 if int(line[section_atom_number[0]:section_atom_number[1]]) == atom_num and len(line) >= 76:
                     atom = {'atom_num': int(line[section_atom_number[0]:section_atom_number[1]]),
-                            'atom_id': line[section_atom_name[0]:section_atom_number[1]].strip(),
+                            'atom_id': line[section_atom_name[0]:section_atom_name[1]].strip(),
                             'atom_comp_id': line[section_residue[0]:section_residue[1]],
                             'chain_id': line[section_chain_id],
                             'comp_num': int(line[section_residue_number[0]:section_residue_number[1]]),
@@ -233,7 +244,7 @@ def get_atom(pdb: str, atom_num: int) -> Optional[dict]:
             sys.exit(1)
 
 
-def get_atoms_on_chain(pdb: str, chain: str) -> list:
+def get_atoms_on_chain(pdb: Union[str, Path], chain: str) -> list:
     """
     Collect the atoms from an inputted chain. Provides all values that are in the specified PDB file.
 
@@ -244,12 +255,12 @@ def get_atoms_on_chain(pdb: str, chain: str) -> list:
     """
     logging.debug(f"Trying to get atoms on chain '{chain}' in '{pdb}'...")
     atoms = []
-    with open(pdb, 'r') as file:
+    with open(os.path.normpath(pdb), 'r') as file:
         for line in file:
             if line[0:6] == 'ATOM  ':
                 if line[section_chain_id] == chain and len(line) >= 76:
                     atom = {'atom_num': int(line[section_atom_number[0]:section_atom_number[1]]),
-                            'atom_id': line[section_atom_name[0]:section_atom_number[1]].strip(),
+                            'atom_id': line[section_atom_name[0]:section_atom_name[1]].strip(),
                             'atom_comp_id': line[section_residue[0]:section_residue[1]],
                             'chain_id': line[section_chain_id],
                             'comp_num': int(line[section_residue_number[0]:section_residue_number[1]]),
@@ -576,7 +587,7 @@ def superimpose_multiple(pdb: str, ref_pdb: str, target_order: str, ref_order: s
             last_count = 0
             for target_res in target_chain:
                 if target_res.get_resname() != "HOH" and 'CA' in target_res:
-                    if first_in_chain:  # If chain doesn't start count at position 0
+                    if first_in_chain:  # If chain doesn't start count at position 0_old
                         offset = target_res.get_id()[1]
                         start = start_pos['target'][chain][0] + offset
                         end = start_pos['target'][chain][1] + offset
@@ -616,10 +627,9 @@ def superimpose_single(pdb: Union[str, Path], ref_pdb: Union[str, Path], query_c
                        aligner: Bio.Align.PairwiseAligner = None) -> Tuple[Path, float]:
     """
     Superimposes a single chain from pdb on to a single chain from ref_pdb. Performs an alignment first, such that the
-    largest possible subsequence without creating a gap while accepting mismatches gets aligned, unless a customer
+    largest possible subsequence without creating a gap while accepting mismatches gets aligned, unless a custom
     aligner is supplied. When using the standard, this only uses the alpha carbons to superimpose the backbone.
-    Writes _only_ the superimposed pdb chain to out_path, a file/list of directories + file in the
-    overall results_path.
+    Writes only the superimposed pdb chain to out_path, a file/list of directories + file in the overall results_path.
 
     :param pdb: The pdb from which to take the chain that should be superimposed
     :param ref_pdb: The reference pdb, on which the chain should be superimposed
@@ -724,6 +734,257 @@ def superimpose_single(pdb: Union[str, Path], ref_pdb: Union[str, Path], query_c
     return p, superimposer.rms
 
 
+def superimpose_reflist(nodes: List[REBprocessor.Node], query_pdb: Union[str, Path], ref_pdb: Union[str, Path],
+                        query_chain: str, ref_chain: str,
+                        out_path: Union[str, Path, List[Union[str, Path]]],
+                        use_longest_subseq: bool = True) -> Tuple[Path, float]:
+    """
+    Tries to superimpose two PDBs using a reference list of nodes. Nodes hold an orig_res_id field, which indicates
+    what nodes they originally were when a PDB was read in. This method assumes that the nodes in 'nodes' are in the
+    same order as the residues in 'query_pdb'. It then tries to superimpose the alpha carbons of all residues from
+    'query_pdb' onto 'ref_pdb' by using the reference 'nodes' to link the residues in 'query_pdb' to 'ref_pdb'.
+    Specifically, it calculates the singular value decomposition to transform the alpha carbons from 'query_pdb' onto
+    the alpha carbons in 'ref_pdb' that correspond to each other. If 'use_longest_subseqs' is True (default), it only
+    uses the alpha carbons of the longest continuous subsequence in 'nodes' to calculate the singular value
+    decomposition, otherwise it uses all alpha carbons it can match to 'ref_pdb'.
+
+    :param nodes: A reference list of REBprocessor.Node objects to map query onto ref
+    :param query_pdb: The PDB to superimpose onto the reference
+    :param ref_pdb: The reference to superimpose onto
+    :param query_chain: Which chain in query_pdb to use
+    :param ref_chain: Which chain in ref_pdb to use
+    :param out_path: Where to save the resultant superimposed query_pdb to (this gets appended to the path to the
+        general VIPER output folder)
+    :param use_longest_subseq: Whether to only use the longest continuous subsequence in nodes to calculate the singular
+        value decomposition (default: True)
+    :return: A tuple of the path to the written out pdb and the superimposer RMSD
+    """
+    logging.info(f"Trying to superimpose {query_pdb}, chain {query_chain} onto {ref_pdb}, chain {ref_chain}...")
+    try:
+        query_pdb = Path(query_pdb).resolve(strict=True)
+        ref_pdb = Path(ref_pdb).resolve(strict=True)
+    except (FileNotFoundError, RuntimeError) as e:
+        logging.error(f"Couldn't resolve a path you provided. Stacktrace: {e}")
+        raise e
+
+    query_atoms = get_atoms_on_chain(query_pdb, query_chain)
+    ref_atoms = get_atoms_on_chain(ref_pdb, ref_chain)
+
+    atom_positions = {}
+    use_nodes = [(n, node) for (n, node) in enumerate(nodes, start=1)]
+
+    # Determine the longest continuous subsequence of nodes
+    if use_longest_subseq:
+        subseqs = [[]]
+        offset = 0
+        first = True
+        # Forward scan
+        for (n, node) in use_nodes:
+            if first:
+                subseqs[offset].append((n, node))
+                first = False
+                continue
+            if node.orig_res_id is None:
+                continue
+            orig_id = node.orig_res_id[0]
+            if orig_id - subseqs[offset][-1][1].orig_res_id[0] > 1:
+                # Encountered gap in sequence, next node's id is more than 1 away. Start new subsequence
+                subseqs.append([])
+                offset += 1
+            subseqs[offset].append((n, node))
+        use_nodes = max(subseqs, key=lambda l: len(l))  # restrict to longest subsequence
+
+    # Extract coordinates of alpha carbons
+    for n, node in use_nodes:
+        if node.orig_res_id is not None:
+            nid = node.orig_res_id
+            if nid[1] != query_chain:
+                raise ValueError(
+                    f"The chain id of passed node {node} is not the same as the passed query_chain '{query_chain}'")
+            if not atom_positions.get(nid[0], False):
+                atom_positions[nid[0]] = {}
+            for atom in query_atoms:
+                if atom["comp_num"] == n and atom["atom_id"] == "CA":
+                    atom_positions[nid[0]]["query"] = [atom["X"], atom["Y"], atom["Z"]]
+            for atom in ref_atoms:
+                if atom["comp_num"] == nid[0] and atom["atom_id"] == "CA":
+                    atom_positions[nid[0]]["ref"] = [atom["X"], atom["Y"], atom["Z"]]
+
+    # Match query alpha carbons to reference alpha carbons
+    query_pos_list = []
+    ref_pos_list = []
+    for id, positions in atom_positions.items():
+        q = positions.get("query")
+        r = positions.get("ref")
+        if q is not None and r is not None:
+            query_pos_list.append(q)
+            ref_pos_list.append(r)
+
+    query = np.array(query_pos_list, "f")
+    ref = np.array(ref_pos_list, "f")
+
+    # Use BioPython singular value decomposition wrapper
+    svds = Bio.SVDSuperimposer.SVDSuperimposer()
+    svds.set(ref, query)
+    svds.run()
+    rms = svds.get_rms()
+    rotation, translation = svds.get_rotran()
+    for atom in query_atoms:
+        coords = [[atom["X"], atom["Y"], atom["Z"]]]
+        coords = np.dot(np.array(coords), rotation) + translation
+        atom["X"] = float(coords[0][0])
+        atom["Y"] = float(coords[0][1])
+        atom["Z"] = float(coords[0][2])
+
+    p = file_utils.make_file(path=out_path, content=rebuild_atom_line(query_atoms))
+    return p, rms
+
+
+def kabsch(nodes: List[REBprocessor.Node], query_pdb: Union[str, Path], ref_pdb: Union[str, Path],
+           query_chain: str, ref_chain: str,
+           out_path: Union[str, Path, List[Union[str, Path]]],
+           use_longest_subseq: bool = True) -> Tuple[Path, float]:
+    """
+    Tries to superimpose two PDBs using a reference list of nodes. Nodes hold an orig_res_id field, which indicates
+    what nodes they originally were when a PDB was read in. This method assumes that the nodes in 'nodes' are in the
+    same order as the residues in 'query_pdb'. It then tries to superimpose the alpha carbons of all residues from
+    'query_pdb' onto 'ref_pdb' by using the reference 'nodes' to link the residues in 'query_pdb' to 'ref_pdb'.
+    Specifically, it uses the Kabsch algorithm to transform the alpha carbons from 'query_pdb' onto the alpha carbons
+    in 'ref_pdb' that correspond to each other. If 'use_longest_subseqs' is True (default), it only uses the alpha
+    carbons of the longest continuous subsequence in 'nodes' to calculate the singular value decomposition, otherwise
+    it uses all alpha carbons it can match to 'ref_pdb'.
+
+    :param nodes: A reference list of REBprocessor.Node objects to map query onto ref
+    :param query_pdb: The PDB to superimpose onto the reference
+    :param ref_pdb: The reference to superimpose onto
+    :param query_chain: Which chain in query_pdb to use
+    :param ref_chain: Which chain in ref_pdb to use
+    :param out_path: Where to save the resultant superimposed query_pdb to (this gets appended to the path to the
+        general VIPER output folder)
+    :param use_longest_subseq: Whether to only use the longest continuous subsequence in nodes to calculate the singular
+        value decomposition (default: True)
+    :return: A tuple of the path to the written out pdb and the superimposer RMSD
+    """
+    logging.info(f"Trying to superimpose {query_pdb}, chain {query_chain} onto {ref_pdb}, chain {ref_chain}...")
+    try:
+        query_pdb = Path(query_pdb).resolve(strict=True)
+        ref_pdb = Path(ref_pdb).resolve(strict=True)
+    except (FileNotFoundError, RuntimeError) as e:
+        logging.error(f"Couldn't resolve a path you provided. Stacktrace: {e}")
+        raise e
+
+    query_atoms = get_atoms_on_chain(query_pdb, query_chain)
+    ref_atoms = get_atoms_on_chain(ref_pdb, ref_chain)
+
+    atom_positions = {}
+
+    use_nodes = [(n, node) for (n, node) in enumerate(nodes, start=1)]
+
+    # Determine the longest continuous subsequence of nodes
+    if use_longest_subseq:
+        subseqs = [[]]
+        offset = 0
+        first = True
+        # Forward scan
+        for (n, node) in use_nodes:
+            if first:
+                subseqs[offset].append((n, node))
+                first = False
+                continue
+            if node.orig_res_id is None:
+                continue
+            orig_id = node.orig_res_id[0]
+            if orig_id - subseqs[offset][-1][1].orig_res_id[0] > 1:
+                # Encountered gap in sequence, next node's id is more than 1 away. Start new subsequence
+                subseqs.append([])
+                offset += 1
+            subseqs[offset].append((n, node))
+        use_nodes = max(subseqs, key=lambda l: len(l))  # restrict to longest subsequence
+
+    # Extract coordinates of alpha carbons
+    for n, node in use_nodes:
+        if node.orig_res_id is not None:
+            nid = node.orig_res_id
+            if nid[1] != query_chain:
+                raise ValueError(
+                    f"The chain id of passed node {node} is not the same as the passed query_chain '{query_chain}'")
+            if not atom_positions.get(nid[0], False):
+                atom_positions[nid[0]] = {}
+            for atom in query_atoms:
+                if atom["comp_num"] == n and atom["atom_id"] == "CA":
+                    atom_positions[nid[0]]["query"] = [atom["X"], atom["Y"], atom["Z"]]
+            for atom in ref_atoms:
+                if atom["comp_num"] == nid[0] and atom["atom_id"] == "CA":
+                    atom_positions[nid[0]]["ref"] = [atom["X"], atom["Y"], atom["Z"]]
+
+    # Match query alpha carbons to reference alpha carbons
+    query_pos_list = []
+    ref_pos_list = []
+    for id, positions in atom_positions.items():
+        q = positions.get("query")
+        r = positions.get("ref")
+        if q is not None and r is not None:
+            query_pos_list.append(q)
+            ref_pos_list.append(r)
+
+    query = np.array(query_pos_list, "f")
+    ref = np.array(ref_pos_list, "f")
+    q_mean = np.mean(query, axis=0)
+    r_mean = np.mean(ref, axis=0)
+
+    # Center the data points
+    q_centered = query - q_mean
+    r_centered = ref - r_mean
+
+    # Calculate the covariance matrix
+    H = np.dot(q_centered.T, r_centered)
+
+    # Singular Value Decomposition
+    U, _, Vt = np.linalg.svd(H)
+
+    # Ensure proper rotation matrix (no reflection) with correct determinant
+    D = np.eye(3)
+    D[2, 2] = np.linalg.det(np.dot(U, Vt))
+
+    # Calculate the rotation matrix
+    R = np.dot(U, np.dot(D, Vt))
+
+    # Only applying the rotation (centered on origin)
+    for atom in query_atoms:
+        coords = [[atom["X"], atom["Y"], atom["Z"]]]
+        coords = np.dot(np.array(coords), R)
+        atom["X"] = float(coords[0][0])
+        atom["Y"] = float(coords[0][1])
+        atom["Z"] = float(coords[0][2])
+
+    p = file_utils.make_file(path=out_path, content=rebuild_atom_line(query_atoms))
+
+    # Add the mean of the reference positions to translate to original position
+    for atom in query_atoms:
+        coords = [[atom["X"], atom["Y"], atom["Z"]]]
+        coords = np.array(coords) + r_mean
+        atom["X"] = float(coords[0][0])
+        atom["Y"] = float(coords[0][1])
+        atom["Z"] = float(coords[0][2])
+
+    out_path[-1] = out_path[-1][:-4] + "_addmean.pdb"
+    p = file_utils.make_file(path=out_path, content=rebuild_atom_line(query_atoms))
+
+    # Subtract the rotated query mean to offset accordingly
+    for atom in query_atoms:
+        coords = [[atom["X"], atom["Y"], atom["Z"]]]
+        coords = np.array(coords) - np.dot(q_mean, R)
+        atom["X"] = float(coords[0][0])
+        atom["Y"] = float(coords[0][1])
+        atom["Z"] = float(coords[0][2])
+
+    out_path[-1] = out_path[-1][:-4] + "_subquery.pdb"
+    p = file_utils.make_file(path=out_path, content=rebuild_atom_line(query_atoms))
+
+    # TODO: Add RMSE calculation
+    return Path("."), 0.0
+
+
 def rmsd(pdb: str, ref_pdb: str, target_order: str, ref_order: str, ca: bool = False) -> float:
     """
     Calculate RMSD values between two PDBs - based on aligned amino acids. Optional Carbon Alpha RMSD as well.
@@ -767,7 +1028,7 @@ def rmsd(pdb: str, ref_pdb: str, target_order: str, ref_order: str, ca: bool = F
     for position in range(len(target_order)):
         # run alignment
         temp_align = aligner.align(target_aa[target_order[position]], ref_aa[ref_order[position]])
-        # Collect info needed - start and end positions of alignments ex. [0, 101]
+        # Collect info needed - start and end positions of alignments ex. [0_old, 101]
         target_chain_info = [temp_align[0].path[0][0], temp_align[0].path[1][0]]
         ref_chain_info = [temp_align[0].path[0][1], temp_align[0].path[1][1]]
         # Collect XYZ cords. for target
@@ -1169,12 +1430,12 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
     return Path(new_name)
 
 
-def get_centroid(pdb: str, residues: List[Union[REBprocessor.Node, int]], weighted: bool = False,
+def get_centroid(pdb: Union[str, Path], residues: List[Union[REBprocessor.Node, int]], weighted: bool = False,
                  to_chain: str = False) -> Tuple[float, float, float]:
     """
     Returns the centroid of the list of residues as a tuple of X, Y, Z coordinates. Can be weighted according to the
     interaction energies. If weighting is desired, a list of REBprocessor.Node instances and to_chain must be supplied.
-    Interaction strengths get normalized to [0.001, 1] and will be multiplied with the difference of the centroid of
+    Interaction strengths get normalized to [0_old.001, 1] and will be multiplied with the difference of the centroid of
     each residue and the global (unweighted) centroid. If the interaction is repulsive, the centroid will be nudged
     away from the residue centroid by this multiplied difference, if it is attractive, it will be nudged towards the
     residue centroid by this multiplied difference.
@@ -1185,9 +1446,9 @@ def get_centroid(pdb: str, residues: List[Union[REBprocessor.Node, int]], weight
     :param to_chain: If calculating a weighted centroid, which interaction energies to which chain to consider
     :return:
     """
-    if len(residues) == 0:
+    if isinstance(residues, list) and len(residues) == 0:
         if cm().get("permissive"):
-            logging.warning(f"Passed empty list to get_centroid()! Returning (0, 0, 0)...")
+            logging.warning(f"Passed empty list to get_centroid()! Returning (0_old, 0_old, 0_old)...")
             return 0.0, 0.0, 0.0
         else:
             logging.error(f"Cannot pass empty list to get_centroid()! Aborting...")
@@ -1208,20 +1469,23 @@ def get_centroid(pdb: str, residues: List[Union[REBprocessor.Node, int]], weight
     posz = 0.0
     ids = []
     strengths = {}
-    for r in residues:
-        if weighted and not isinstance(r, REBprocessor.Node):
-            if cm().get("permissive"):
-                logging.warning(f"Entry in residue list ({r}) wasn't a REBprocessor.Node! Skipping this one...")
-            else:
-                logging.error(f"Entry in residue list ({r}) wasn't a REBprocessor.Node! Aborting...")
-                raise ValueError("Not all entries in the residue list passed to get_centroid() were "
-                                 "REBprocesser.Node instances! This is necessary for weighted calculation!")
-        ids.append(int(r))
-        if weighted:
-            strengths[r.residue_id] = r.strength.get(to_chain, 0)
+    if isinstance(residues, list):
+        for r in residues:
+            if weighted and not isinstance(r, REBprocessor.Node):
+                if cm().get("permissive"):
+                    logging.warning(f"Entry in residue list ({r}) wasn't a REBprocessor.Node! Skipping this one...")
+                else:
+                    logging.error(f"Entry in residue list ({r}) wasn't a REBprocessor.Node! Aborting...")
+                    raise ValueError("Not all entries in the residue list passed to get_centroid() were "
+                                     "REBprocesser.Node instances! This is necessary for weighted calculation!")
+            ids.append(int(r))
+            if weighted:
+                strengths[r.residue_id] = r.strength.get(to_chain, 0)
+    else:
+        ids.append(residues)
     if len(ids) == 0:
         if cm().get("permissive"):
-            logging.warning(f"Couldn't determine any valid residue ids! Returning (0, 0, 0)...")
+            logging.warning(f"Couldn't determine any valid residue ids! Returning (0_old, 0_old, 0_old)...")
             return 0.0, 0.0, 0.0
         else:
             logging.error(f"Couldn't determine any valid residue ids! Aborting...")
@@ -1247,7 +1511,7 @@ def get_centroid(pdb: str, residues: List[Union[REBprocessor.Node, int]], weight
         return posx / len(residue_pos), posy / len(residue_pos), posz / len(residue_pos)
     else:
         # TODO: Just avg residue position * normed strength instead of nudging routine?
-        #  i. e.: ( (0.1 * xyz_1 + 0.4 * xyz_2 + 0.2 * xyz_3 + ...) / num_res )
+        #  i. e.: ( (0_old.1 * xyz_1 + 0_old.4 * xyz_2 + 0_old.2 * xyz_3 + ...) / num_res )
         # Normalize values
         min_strength_attractive = 10000.0
         min_strength_repulsive = 10000.0

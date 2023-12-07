@@ -31,34 +31,37 @@ class _SelectionStrategies:
         linker = cm().get("peptide_generator.linker")
         if linker is None:
             linker = "GG"  # default is polyglycine
-        increase_id_by = 0
-        last_node = None
+        first = True
         new_list = []
         for node in nlist:
-            if last_node is None:
+            if first:
                 new_list.append(REBprocessor.Node(amino_acid=node.amino_acid,
-                                                  residue_id=node.residue_id + increase_id_by,
-                                                  chain=node.chain))
+                                                  residue_id=node.residue_id,
+                                                  chain=node.chain,
+                                                  orig_res_id=node.orig_res_id))
+                first = False
                 continue
-            if abs((node.residue_id + increase_id_by) - last_node.residue_id) > 1:  # Jump in the sequence, need linker
-                base_id = last_node.residue_id
+            if abs(node.residue_id - new_list[-1].residue_id) > 1:  # Jump in the sequence, need linker
+                base_id = new_list[-1].residue_id
                 if respect_length_limit and len(new_list) + len(linker) >= cm().get("peptide_generator.max_length"):
                     raise IndexError("Cannot insert")
-                for element in linker:
+                for element in linker:  # Add linkers
                     base_id += 1
-                    increase_id_by += 1
                     linker_node = REBprocessor.Node(amino_acid=PDBtool.one_to_three(element),
                                                     residue_id=base_id,
-                                                    chain=last_node.chain,
+                                                    chain=new_list[-1].chain,
                                                     neighbor_prev=new_list[-1])
                     new_list[-1].neighbor_next = linker_node
                     new_list.append(linker_node)
-                    last_node = linker_node
+                new_list[-1].neighbor_next = node
+                node.neighbor_prev = new_list[-1]
+                new_list.append(node)
             else:
                 add_node = REBprocessor.Node(amino_acid=node.amino_acid,
-                                             residue_id=node.residue_id + increase_id_by,
+                                             residue_id=node.residue_id,
                                              chain=node.chain,
-                                             neighbor_prev=new_list[-1])
+                                             neighbor_prev=new_list[-1],
+                                             orig_res_id=node.orig_res_id)
                 new_list[-1].neighbor_next = add_node
                 new_list.append(add_node)
         return new_list
@@ -315,7 +318,7 @@ class _SelectionStrategies:
             fragments = {}
             curr_fragment = []
             lookahead_buffer = []
-            fragment_strength = -0.00000001  # Need to start with an epsilon, otherwise div/0 error in include
+            fragment_strength = -0.00000001  # Need to start with an epsilon, otherwise div/0_old error in include
 
             # Forward scan
             for residue_index in range(len(nodes)):
@@ -390,7 +393,7 @@ class _SelectionStrategies:
                 if stop:
                     break
 
-            print(pprint.pformat(temp))
+            logging.debug(f"Peptide fragments are: {pprint.pformat(temp)}")
 
             return _SelectionStrategies.add_linkers(
                 sorted(final_peptide, key=lambda node: node.residue_id, reverse=False))

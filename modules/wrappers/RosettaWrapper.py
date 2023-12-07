@@ -12,7 +12,7 @@ from enum import IntEnum
 from io import StringIO
 from pathlib import Path
 from pprint import pformat
-from typing import Union, List, final, Optional
+from typing import Union, List, final, Optional, Tuple
 
 import pandas as pd
 
@@ -392,7 +392,8 @@ class REBprocessor:
             # Create Node and parse data
             if row.pdbid1 not in seen[row.pose_id]:
                 node = REBprocessor.Node(amino_acid=row.restype1, residue_id=int(row.pdbid1[:-1]), chain=row.pdbid1[-1],
-                                         partners=[(row.pdbid2, float(row.total))])
+                                         partners=[(row.pdbid2, float(row.total))],
+                                         orig_res_id=(int(row.pdbid1[:-1]), row.pdbid1[-1]))
                 if row.pdbid2[-1] in node.strength:
                     node.strength[row.pdbid2[-1]] += row.total
                 else:
@@ -436,6 +437,7 @@ class REBprocessor:
             if first:
                 # Get placeholder nodes for averaging energies
                 aggregate = [REBprocessor.Node(n.amino_acid, n.residue_id, n.chain, n.partners.copy(),
+                                               orig_res_id=copy.deepcopy(n.orig_res_id),
                                                strength=copy.deepcopy(n.strength)) for n in nlist]
                 first = False
             else:
@@ -467,6 +469,7 @@ class REBprocessor:
         strength: dict = field(default_factory=lambda: ({}))
         neighbor_prev: REBprocessor.Node = None
         neighbor_next: REBprocessor.Node = None
+        orig_res_id: Tuple[int, str] = None
 
         @staticmethod
         def get_neighbors(n: REBprocessor.Node, length: int, direction: int = 0, curr_depth: int = 0):
@@ -477,14 +480,14 @@ class REBprocessor:
                 A - B - C - D - E - F - G - H - J
                 ---- increasing residue id ---->
 
-            Calling this method on Node E with length 2 and direction 0 would give: [C, D, E, F, G].
-            Calling this method on Node E with length 2 and direction < 0 would give: [C, D, E]
+            Calling this method on Node E with length 2 and direction 0_old would give: [C, D, E, F, G].
+            Calling this method on Node E with length 2 and direction < 0_old would give: [C, D, E]
 
             :param n: The start node from which to gather the relative neighbors
             :param length: How many neighbors (inclusive) to get. I.e. "2" would give n + two neighbors
-            :param direction: In which direction to look for neighbors. 0 looks in both directions (increasing and
-                decreasing residue id), direction < 0 only considers neighbors with a smaller residue id,
-                whereas direction > 0 only considers residues with a higher residue id
+            :param direction: In which direction to look for neighbors. 0_old looks in both directions (increasing and
+                decreasing residue id), direction < 0_old only considers neighbors with a smaller residue id,
+                whereas direction > 0_old only considers residues with a higher residue id
             :param curr_depth:
             :return:
             """
