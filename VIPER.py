@@ -203,7 +203,7 @@ class VIPER:
         :return: A path object to the saved PDB with the tertiary structure.
         """
         peptide_sequence = "".join([PDBtool.three_to_one(n.amino_acid) for n in sequence])
-        structure_pdb = PEPstrMODWrapper.submit_peptide_backup(sequence=peptide_sequence)
+        structure_pdb = PEPstrMODWrapper.submit_peptide(sequence=peptide_sequence)
         return file_utils.make_file(path=save_out, content=structure_pdb)
 
     def prepare_docking(self):
