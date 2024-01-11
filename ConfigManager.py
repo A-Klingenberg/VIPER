@@ -11,28 +11,10 @@ from pprint import pformat
 from typing import Optional, Any
 
 import version
+from util import Singleton
 
 
-class _Singleton(type):
-    _instances = {}
-
-    def __call__(cls, *args, **kwargs):
-        force = kwargs.pop("force", False)
-        if cls not in cls._instances or force:
-            cls._instances[cls] = super(_Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-    def get_cm(cls):
-        if c := cls._instances.get(cls, None):
-            return c
-        else:
-            # Modify if you want to allow the usage of the ConfigManager before it is initialized, i. e.
-            # if you want to construct a ConfigManager on demand if it is accessed but not initialized
-            print("Trying to use ConfigManager before it has been initialized!")
-            raise RuntimeError("Trying to use ConfigManager before it has been initialized!")
-
-
-class ConfigManager(metaclass=_Singleton):
+class ConfigManager(metaclass=Singleton._Singleton):
     command_args: dict = None
     file_config: dict = None
     program_path: str = None
