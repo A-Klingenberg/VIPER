@@ -4,13 +4,13 @@ import logging
 import pprint
 import sys
 from abc import abstractmethod, ABCMeta
-from typing import List, final, Type
+from typing import List, final, Type, override
 
 import ConfigManager
 from modules.wrappers.RosettaWrapper import REBprocessor
 from util import PDBtool
 
-cm = ConfigManager.ConfigManager.get_cm
+cm = ConfigManager.ConfigManager.get_instance
 
 
 class PeptideGenerator:
@@ -195,6 +195,7 @@ class _SelectionStrategies:
             self.ignore_neighbors = cm().get("peptide_generator.greedy_expand.ignore_neighbors")
             self.custom_func = cm().get("peptide_generator.greedy_expand.custom_func")
 
+        @override
         def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
             if not from_chain == nodes[0].chain:
                 raise ValueError(
@@ -275,6 +276,7 @@ class _SelectionStrategies:
             self.lone_residue_pad_range = cm().get("peptide_generator.fragment_joiner.lone_residue_pad_range")
             self.custom_func = cm().get("peptide_generator.fragment_joiner.custom_func")
 
+        @override
         def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
             if len(nodes) == 0:
                 raise ValueError("Passed an empty list of nodes!")
@@ -368,6 +370,10 @@ class _SelectionStrategies:
                             (curr_fragment, fragment_strength)  # Save current fragment with aggregate energy
                         curr_fragment = []
                         fragment_strength = -0.00000001
+
+            # TODO: Add penalty based on range (closest atoms) of fragment to strongest fragment
+
+
 
             # TODO: Improve upon simple, greedy strategy?
             #  Knapsack problem, how to fit fragments with strength and length into max_length?

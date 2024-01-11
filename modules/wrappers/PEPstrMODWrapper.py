@@ -8,7 +8,7 @@ from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 from ConfigManager import ConfigManager
 
-cm = ConfigManager.get_cm
+cm = ConfigManager.get_instance
 
 
 class PEPstrMODWrapper:
