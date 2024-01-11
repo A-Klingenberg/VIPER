@@ -1,13 +1,11 @@
 import copy
 import logging
 import os.path
+import pprint
 import random
 import shutil
-import sys
 from pathlib import Path
 from typing import Union, List
-
-import Bio
 
 import ConfigManager
 from modules.stages import PeptideGenerator
@@ -77,6 +75,7 @@ class VIPER:
             if mut not in initpop:
                 initpop.append(mut)
         initpop.append(pepseq)
+        print(pprint.pformat(initpop))
         ga = GAStrategy(ref_pdb=self.reference_renum_pdb, populations=[Population(lambda _: _, initpop)], config={
             "select_percent": 0.3,
             "selection_mode": "ROULETTEWHEEL",

@@ -175,25 +175,25 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     def score(self, peptide: str) -> float:
         # Get 3D structure
         pdb = PEPstrMODWrapper.submit_peptide(sequence=peptide)
-        use_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}")
-        pdb = file_utils.make_file(os.path.normpath(use_path + "base.pdb"), pdb)
+        use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
+        pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
 
         # Superimpose onto receptor
         pdb, rms = PDBtool.superimpose_single(pdb, self.ref,
                                               query_chain=f"{PDBtool.get_chains(os.path.normpath(pdb))[0]}",
                                               ref_chain=f"{cm().get('partner_chain')}",
-                                              out_path=[use_path, "aligned", f"{peptide}_aligned.pdb"])
+                                              out_path=[use_path_items, "aligned", f"{peptide}_aligned.pdb"])
 
         # Get binding energy
+        score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "interface_score.sc")
         self.rw.run(RosettaWrapper.Flags().interface_analyzer, options={
             "-in:file:s": pdb,
-            "-out:file:score_only": os.path.join(use_path, "interface_score.sc"),
+            "-out:file:score_only": os.path.normpath(score_path),
         })
         best_pdb, scores = RosettaWrapper.ScoreFileParser.get_extremum(
-            os.path.normpath(
-                os.path.join(use_path, "interface_score.sc")),
+            os.path.normpath(score_path),
             "dG_separated")
-        best_pdb = os.path.normpath(use_path + best_pdb + ".pdb")
+        best_pdb = f"GA/gen{self.generation}_{peptide}/{best_pdb}.pdb"
         best_rosetta_score = scores["dG_separated"]
 
         # Calculate SCII

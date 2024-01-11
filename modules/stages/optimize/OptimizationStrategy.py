@@ -1,5 +1,5 @@
-from abc import ABCMeta, abstractmethod
-from typing import List, Callable, Any
+from abc import ABCMeta
+from typing import List, Callable
 
 
 class OptimizationStrategy(metaclass=ABCMeta):
