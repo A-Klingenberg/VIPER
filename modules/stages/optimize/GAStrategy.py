@@ -162,7 +162,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         return offspring
 
     def mutate(self, individual):
-        _ = copy.deepcopy(individual)
+        _ = list(copy.deepcopy(individual))
         for n, gene in enumerate(individual):
             if random.random() < self.config["mutation_rate"]:
                 if bmatrix := self.config["mutation_bias"]:
@@ -170,7 +170,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                           k=1)
                 else:
                     _[n] = random.choices(population=list(BLOSUM.BLOSUM62_shifted.get(gene)), k=1)
-        return _
+        return "".join(_)
 
     def score(self, peptide: str) -> float:
         # Get 3D structure

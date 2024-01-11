@@ -54,18 +54,19 @@ class VIPER:
         #                                                ["candidates", str(self.candidate_counter), f"candidate.pdb"])
 
         curr_candidate_dir = Path(os.path.join(cm().get("results_path"), "candidates", str(self.candidate_counter)))
+        bmatrix = BLOSUM.BLOSUM62_shifted
 
         def mutate(individual):
-            _ = copy.deepcopy(individual)
-            for n, gene in enumerate(individual):
+            _ = list(copy.deepcopy(individual))
+            for n, gene in enumerate(_):
                 if random.random() < 0.05:
-                    if bmatrix := self.config["mutation_bias"]:
+                    if bmatrix:
                         _[n] = random.choices(population=list(bmatrix[gene].keys()),
                                               weights=list(bmatrix[gene].values()),
                                               k=1)
                     else:
                         _[n] = random.choices(population=list(BLOSUM.BLOSUM62.keys()), k=1)
-            return _
+            return "".join(_)
 
         pepnodes = [n for n in candidate if n.orig_res_id is not None]
         pepseq = "".join([PDBtool.three_to_one(n.amino_acid) for n in pepnodes])
