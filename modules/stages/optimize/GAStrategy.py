@@ -167,9 +167,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             if random.random() < self.config["mutation_rate"]:
                 if bmatrix := self.config["mutation_bias"]:
                     _[n] = random.choices(population=list(bmatrix[gene].keys()), weights=list(bmatrix[gene].values()),
-                                          k=1)
+                                          k=1)[0]
                 else:
-                    _[n] = random.choices(population=list(BLOSUM.BLOSUM62_shifted.get(gene)), k=1)
+                    _[n] = random.choices(population=list(BLOSUM.BLOSUM62_shifted.get(gene)), k=1)[0]
         return "".join(_)
 
     def score(self, peptide: str) -> float:

@@ -63,9 +63,9 @@ class VIPER:
                     if bmatrix:
                         _[n] = random.choices(population=list(bmatrix[gene].keys()),
                                               weights=list(bmatrix[gene].values()),
-                                              k=1)
+                                              k=1)[0]
                     else:
-                        _[n] = random.choices(population=list(BLOSUM.BLOSUM62.keys()), k=1)
+                        _[n] = random.choices(population=list(BLOSUM.BLOSUM62.keys()), k=1)[0]
             return "".join(_)
 
         pepnodes = [n for n in candidate if n.orig_res_id is not None]
