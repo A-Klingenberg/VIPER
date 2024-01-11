@@ -12,16 +12,17 @@ from enum import IntEnum
 from io import StringIO
 from pathlib import Path
 from pprint import pformat
-from typing import Union, List, final, Optional, Tuple
+from typing import Union, List, final, Optional, Tuple, Final
 
 import pandas as pd
 
 import ConfigManager
+from util import Singleton
 
-cm = ConfigManager.ConfigManager.get_cm
+cm = ConfigManager.ConfigManager.get_instance
 
 
-class RosettaWrapper:
+class RosettaWrapper(metaclass=Singleton._Singleton):
     apps: dict = {}
     base_path: str = None
 
@@ -303,7 +304,7 @@ class ScoreFileParser:
             for row in reader:
                 scores[row["description"]] = {}
                 for k, v in row.items():
-                    if k in ["description", "SCORE:", ""]:  # Exclude fields with irrelevant data
+                    if k in ["description", "SCORE:", ""]:  # Only carry over actual score terms into the score dict
                         continue
                     scores[row["description"]][k] = float(v)
         except csv.Error as e:
@@ -535,133 +536,170 @@ class REBprocessor:
             return str(self.residue_id) + self.chain
 
 
-class Flags:
-    residue_energy_breakdown: dict = {
-        "app": "residue_energy_breakdown",
-        "-out:file:silent": None,
-        "-run:constant_seed": None,
-        "-run:jran": None,
-        "-out:no_color": True,
-    }
+@final
+class Flags(metaclass=Singleton._Singleton):
+    @property
+    def residue_energy_breakdown(self) -> dict:
+        return {
+            "app": "residue_energy_breakdown",
+            "-out:file:silent": None,
+            "-run:constant_seed": None,
+            "-run:jran": None,
+            "-out:no_color": True,
+        }
 
-    relax_complex_for_REB: dict = {
-        "app": "relax",
-        "-in:file:s": None,
-        "-out:path:all": None,
-        "-out:suffix": "_relax_REB",
-        "-run:constant_seed": None,
-        "-run:jran": None,
-        "-nstruct": 10,
-        "-ex1": None,
-        "-ex2": None,
-        "-use_input_sc": None,
-        "-no_his_his_pairE": None,
-        "-no_optH": False,
-        "-flip_HNQ": None,
-        "-relax:fast": None,
-        "-relax:constrain_relax_to_start_coords": None,  # Pin backbone to known position
-        "-relax:coord_constrain_sidechains": None,  # Pin heavy atoms in sidechains
-        "-relax:ramp_constraints": False,  # Conserve constraints throughout run
-        "-out:no_color": True,
-    }
+    @property
+    def interface_analyzer(self) -> dict:
+        return {
+            "app": "InterfaceAnalyzer",
+            "-compute_packstat": True,
+            "-tracer_data_print": False,
+            "-pack_input": True,
+            "-pack_separated": True,
+            "-add_regular_scores_to_scorefile": True,
+            "-atomic_burial_cutoff": 0.01,
+            "-sasa_calculator_probe_radius": 1.4,
+            "-pose_metrics::interface_cutoff": 8.0,
+            "-use_input_sc": None,
+            "-run:constant_seed": None,
+            "-run:jran": None,
+            "-out:no_color": True,
+        }
 
-    relax_partner_protein: dict = {
-        "app": "relax",
-        "-in:file:s": None,
-        "-out:path:all": None,
-        "-out:suffix": "_relax_partner",
-        "-run:constant_seed": None,
-        "-run:jran": None,
-        "-nstruct": None,  # relax_partner_runs
-        "-ex1": None,
-        "-ex2": None,
-        "-use_input_sc": None,
-        "-flip_HNQ": None,
-        "-no_optH": None,
-        "-out:no_color": True,
-    }
+    @property
+    def relax_pinned_positions(self) -> dict:
+        return {
+            "app": "relax",
+            "-in:file:s": None,
+            "-out:path:all": None,
+            "-out:suffix": "_relax_pinned",
+            "-run:constant_seed": None,
+            "-run:jran": None,
+            "-nstruct": 10,
+            "-ex1": None,
+            "-ex2": None,
+            "-use_input_sc": None,
+            "-no_his_his_pairE": None,
+            "-no_optH": False,
+            "-flip_HNQ": None,
+            "-relax:fast": None,
+            "-relax:constrain_relax_to_start_coords": None,  # Pin backbone to known position
+            "-relax:coord_constrain_sidechains": None,  # Pin heavy atoms in sidechains
+            "-relax:ramp_constraints": False,  # Conserve constraints throughout run
+            "-out:no_color": True,
+        }
 
-    relax_peptide_normal_mode: dict = {
-        "app": "rosetta_scripts",
-        "-in:file:s": None,
-        "-nstruct": None,  # relax_peptide_nmr_runs
-        "-parser:protocol": os.path.join(os.path.realpath(__file__), "..", "..", "util", "rosetta_scripts",
-                                         "normal_mode_relax.xml"),
-        "-out:path:all": None,
-        "-out:suffix": "_relax_peptide_normal_mode",
-        "-out:no_color": True,
-    }
+    @property
+    def relax_partner_protein(self) -> dict:
+        return {
+            "app": "relax",
+            "-in:file:s": None,
+            "-out:path:all": None,
+            "-out:suffix": "_relax_partner",
+            "-run:constant_seed": None,
+            "-run:jran": None,
+            "-nstruct": None,  # relax_partner_runs
+            "-ex1": None,
+            "-ex2": None,
+            "-use_input_sc": None,
+            "-flip_HNQ": None,
+            "-no_optH": None,
+            "-out:no_color": True,
+        }
 
-    relax_peptide_backbone: dict = {
-        "app": "relax",
-        "-in:file:s": None,
-        "-nstruct": None,  # relax_peptide_bb_runs
-        "-backrub:ntrials": None,  # relax_peptide_bb_ntrials
-        "-out:path:all": None,
-        "-out:suffix": "_relax_peptide_backbone",
-        "-out:no_color": True,
-    }
+    @property
+    def relax_peptide_normal_mode(self) -> dict:
+        return {
+            "app": "rosetta_scripts",
+            "-in:file:s": None,
+            "-nstruct": None,  # relax_peptide_nmr_runs
+            "-parser:protocol": os.path.join(os.path.realpath(__file__), "..", "..", "util", "rosetta_scripts",
+                                             "normal_mode_relax.xml"),
+            "-out:path:all": None,
+            "-out:suffix": "_relax_peptide_normal_mode",
+            "-out:no_color": True,
+        }
 
-    relax_peptide_fast: dict = {
-        "app": "relax",
-        "-in:file:s": None,
-        "-nstruct": None,  # relax_peptide_fast_runs
-        "-relax:thorough": None,
-        "-out:path:all": None,
-        "-out:suffix": "_relax_peptide_fast",
-        "-out:no_color": True,
-    }
+    @property
+    def relax_peptide_backbone(self) -> dict:
+        return {
+            "app": "relax",
+            "-in:file:s": None,
+            "-nstruct": None,  # relax_peptide_bb_runs
+            "-backrub:ntrials": None,  # relax_peptide_bb_ntrials
+            "-out:path:all": None,
+            "-out:suffix": "_relax_peptide_backbone",
+            "-out:no_color": True,
+        }
 
-    prepack_complex: dict = {
-        "app": "docking_prepack_protocol",
-        "-in:file:s": None,
-        "-unboundrot": None,  # pdb
-        "-nstruct": 1,
-        "-partners": None,
-        "-ensemble1": None,
-        "-ensemble2": None,
-        "-ex1": None,
-        "-ex2aro": None,
-        "-out:path:all": None,
-        "-out:suffix": "_prepack_complex",
-        "-out:no_color": True,
-    }
+    @property
+    def relax_peptide_fast(self) -> dict:
+        return {
+            "app": "relax",
+            "-in:file:s": None,
+            "-nstruct": None,  # relax_peptide_fast_runs
+            "-relax:thorough": None,
+            "-out:path:all": None,
+            "-out:suffix": "_relax_peptide_fast",
+            "-out:no_color": True,
+        }
 
-    docking_ensemble: dict = {
-        "app": "docking_protocol",
-        "-in:file:s": None,
-        "-unboundrot": None,  # pdb
-        "-nstruct": None,  # docking_runs
-        "-partners": None,
-        "-ensemble1": None,
-        "-ensemble2": None,
-        "-dock_pert": None,  # docking_translation docking_rotation
-        "-spin": None,
-        "-detect_disulf": "true",
-        "-rebuild_disulf": "true",
-        "-ex1": None,
-        "-ex2aro": None,
-        "-docking_low_res_score": "motif_dock_score",
-        "-mh:path:scores_BB_BB": None,
-        "-mh:score:use_ss1": "false",
-        "-mh:score:use_ss2": "false",
-        "-mh:score:use_aa1": "true",
-        "-mh:score:use_aa2": "true",
-        "-out:path:all": None,
-        "-out:suffix": "_docking_ensemble",
-        "-out:no_color": True,
-    }
+    @property
+    def prepack_complex(self) -> dict:
+        return {
+            "app": "docking_prepack_protocol",
+            "-in:file:s": None,
+            "-unboundrot": None,  # pdb
+            "-nstruct": 1,
+            "-partners": None,
+            "-ensemble1": None,
+            "-ensemble2": None,
+            "-ex1": None,
+            "-ex2aro": None,
+            "-out:path:all": None,
+            "-out:suffix": "_prepack_complex",
+            "-out:no_color": True,
+        }
 
-    refine_local: dict = {
-        "app": "docking_protocol",
-        "-in:file:s": None,
-        "-nstruct": None,  # refine_runs
-        "-docking_local_refine": None,
-        "-use_input_sc": None,
-        "-ex1": None,
-        "-ex2aro": None,
-        "-out:file:fullatom": None,
-        "-out:path:all": None,
-        "-out:suffix": "_refine_local",
-        "-out:no_color": True,
-    }
+    @property
+    def docking_ensemble(self) -> dict:
+        return {
+            "app": "docking_protocol",
+            "-in:file:s": None,
+            "-unboundrot": None,  # pdb
+            "-nstruct": None,  # docking_runs
+            "-partners": None,
+            "-ensemble1": None,
+            "-ensemble2": None,
+            "-dock_pert": None,  # docking_translation docking_rotation
+            "-spin": None,
+            "-detect_disulf": "true",
+            "-rebuild_disulf": "true",
+            "-ex1": None,
+            "-ex2aro": None,
+            "-docking_low_res_score": "motif_dock_score",
+            "-mh:path:scores_BB_BB": None,
+            "-mh:score:use_ss1": "false",
+            "-mh:score:use_ss2": "false",
+            "-mh:score:use_aa1": "true",
+            "-mh:score:use_aa2": "true",
+            "-out:path:all": None,
+            "-out:suffix": "_docking_ensemble",
+            "-out:no_color": True,
+        }
+
+    @property
+    def refine_local(self) -> dict:
+        return {
+            "app": "docking_protocol",
+            "-in:file:s": None,
+            "-nstruct": None,  # refine_runs
+            "-docking_local_refine": None,
+            "-use_input_sc": None,
+            "-ex1": None,
+            "-ex2aro": None,
+            "-out:file:fullatom": None,
+            "-out:path:all": None,
+            "-out:suffix": "_refine_local",
+            "-out:no_color": True,
+        }
