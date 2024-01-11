@@ -8,7 +8,7 @@ from typing import Union, List
 
 from ConfigManager import ConfigManager
 
-cm = ConfigManager.get_cm
+cm = ConfigManager.get_instance
 
 
 def compress_directory(directory: Union[str, Path], archive_name: Union[str, Path],
