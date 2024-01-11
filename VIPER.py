@@ -1,5 +1,7 @@
+import copy
 import logging
 import os.path
+import random
 import shutil
 import sys
 from pathlib import Path
@@ -9,11 +11,13 @@ import Bio
 
 import ConfigManager
 from modules.stages import PeptideGenerator
+from modules.stages.optimize.GAStrategy import GAStrategy, Population
 from modules.wrappers import RosettaWrapper
 from modules.wrappers.PEPstrMODWrapper import PEPstrMODWrapper
 from util import file_utils, PDBtool
+from util.BLOSUM import BLOSUM
 
-cm = ConfigManager.ConfigManager.get_cm
+cm = ConfigManager.ConfigManager.get_instance
 
 
 # TODO: Does this need to be a class?
@@ -26,9 +30,8 @@ class VIPER:
     candidate_counter = 0
 
     def __init__(self, pdb: Union[str, Path]):
-        # self.rw = RosettaWrapper.RosettaWrapper()
+        self.rw = RosettaWrapper.RosettaWrapper()
         self.base_pdb = Path(pdb)
-        self.reference_renum_relaxed = Path("6m0j_renum_relaxed.pdb")
         self.selection_strat = PeptideGenerator._SelectionStrategies.get_strategy()()
         self.candidate_counter = 0
         pass
@@ -39,11 +42,9 @@ class VIPER:
 
         :return: None
         """
-        # self.preprocess_pdb()
-        # nlist = self.do_energy_breakdown()
-        nlist = RosettaWrapper.REBprocessor.process_multipose("reb.out")
+        self.preprocess_pdb()
+        nlist = self.do_energy_breakdown()
         candidate = self.generate_peptide(nlist)
-        #self.candidate_counter += 1
 
         # Generate _without_ linkers!
         peptide_structure = self.get_tertiary_structure([n for n in candidate if n.orig_res_id is not None],
@@ -52,68 +53,42 @@ class VIPER:
         # peptide_structure = self.get_tertiary_structure(candidate,
         #                                                ["candidates", str(self.candidate_counter), f"candidate.pdb"])
 
-        # standard superimposition by aligning peptide first
-        p, _ = PDBtool.superimpose_single(os.path.normpath(peptide_structure),
-                                          os.path.normpath(self.reference_renum_relaxed),
-                                          query_chain=f"{PDBtool.get_chains(os.path.normpath(peptide_structure))[0]}",
-                                          ref_chain=f"{cm().get('partner_chain')}",
-                                          out_path=["candidates", str(self.candidate_counter),
-                                                    f"superimposed_align.pdb"])
-
-        # As above, but with a tuned aligner that better handles mismatches and gaps
-        aligner = Bio.Align.PairwiseAligner()
-        aligner.mode = 'local'
-        aligner.gap_score = -2.0
-        aligner.match_score = 2.0
-        aligner.mismatch_score = -1
-        aligner.open_gap_score = -2
-        aligner.extend_gap_score = -.5
-        p, _ = PDBtool.superimpose_single(os.path.normpath(peptide_structure),
-                                          os.path.normpath(self.reference_renum_relaxed),
-                                          query_chain=f"{PDBtool.get_chains(os.path.normpath(peptide_structure))[0]}",
-                                          ref_chain=f"{cm().get('partner_chain')}",
-                                          out_path=["candidates", str(self.candidate_counter),
-                                                    f"superimposed_align_tuned.pdb"],
-                                          aligner=aligner)
-
-        # Superimpose using the reference list of residues, aligning residues that originally existed in the PDB with
-        # their original (alpha carbon) positions (excludes linkers)
-        p, _ = PDBtool.superimpose_reflist(candidate, os.path.normpath(peptide_structure),
-                                           os.path.normpath(self.reference_renum_relaxed),
-                                           query_chain=f"{PDBtool.get_chains(os.path.normpath(peptide_structure))[0]}",
-                                           ref_chain=f"{cm().get('partner_chain')}",
-                                           out_path=["candidates", str(self.candidate_counter),
-                                                     f"superimposed_origrefs_svd_all.pdb"],
-                                           use_longest_subseq=False)
-
-        # Same as above, but only aligns the longest continuous subsection
-        p, _ = PDBtool.superimpose_reflist(candidate, os.path.normpath(peptide_structure),
-                                           os.path.normpath(self.reference_renum_relaxed),
-                                           query_chain=f"{PDBtool.get_chains(os.path.normpath(peptide_structure))[0]}",
-                                           ref_chain=f"{cm().get('partner_chain')}",
-                                           out_path=["candidates", str(self.candidate_counter),
-                                                     f"superimposed_origrefs_svd_longest.pdb"])
-
-        # Uses the manually implemented Kabsch algorithm, only uses the longest continuous subsection of residues that
-        # originally existed in the PDB and aligns their alpha carbons with their original coordinates
-        p, _ = PDBtool.kabsch(candidate, os.path.normpath(peptide_structure),
-                              os.path.normpath(self.reference_renum_relaxed),
-                              query_chain=f"{PDBtool.get_chains(os.path.normpath(peptide_structure))[0]}",
-                              ref_chain=f"{cm().get('partner_chain')}",
-                              out_path=["candidates", str(self.candidate_counter),
-                                        f"superimposed_kabsch_longest_subseq.pdb"])
-        # TEST END
-        sys.exit(0)
-
         curr_candidate_dir = Path(os.path.join(cm().get("results_path"), "candidates", str(self.candidate_counter)))
+
+        def mutate(individual):
+            _ = copy.deepcopy(individual)
+            for n, gene in enumerate(individual):
+                if random.random() < 0.05:
+                    if bmatrix := self.config["mutation_bias"]:
+                        _[n] = random.choices(population=list(bmatrix[gene].keys()),
+                                              weights=list(bmatrix[gene].values()),
+                                              k=1)
+                    else:
+                        _[n] = random.choices(population=list(BLOSUM.BLOSUM62.keys()), k=1)
+            return _
+
+        pepnodes = [n for n in candidate if n.orig_res_id is not None]
+        pepseq = "".join([PDBtool.three_to_one(n.amino_acid) for n in pepnodes])
+
+        initpop = []
+        while len(initpop) < 10:
+            mut = mutate(pepseq)
+            if mut not in initpop:
+                initpop.append(mut)
+        initpop.append(pepseq)
+        ga = GAStrategy(self.reference_renum_pdb, [Population(lambda _: _, initpop)])
+        ga.run()
+
+
+        """
         # Do a fast relaxation of the peptide while it is pinned in place
-        self.rw.run(RosettaWrapper.Flags.relax_complex_for_REB.copy(), options={
-            "-in:file:s": os.path.normpath(p),
+        self.rw.run(RosettaWrapper.Flags().relax_pinned_positions, options={
+            "-in:file:s": os.path.normpath(peptide_structure),
             "-out:path:all": os.path.join(curr_candidate_dir, "relax"),
             "-in:file:native": os.path.normpath(self.reference_renum_pdb),
         })
         # Do residue energy breakdown to get binding energy
-        self.rw.run(RosettaWrapper.Flags.residue_energy_breakdown.copy(), options={
+        self.rw.run(RosettaWrapper.Flags().residue_energy_breakdown, options={
             "-in:file:l": os.path.normpath(
                 file_utils.make_pdb_ensemble_list(os.path.join(curr_candidate_dir, "relax"),
                                                   os.path.join(curr_candidate_dir,
@@ -121,6 +96,7 @@ class VIPER:
             "-out:file:silent": os.path.join(curr_candidate_dir,
                                              f"energy_breakdown_candidate{self.candidate_counter}_ensemble.out")
         })
+        """
 
     def preprocess_pdb(self) -> Path:
         """
@@ -137,7 +113,7 @@ class VIPER:
                                                                                             self.base_pdb.name[:-4] +
                                                                                             "_renum.pdb")))
         logging.debug(f"Relaxing renumbered PDB...")
-        self.rw.run(RosettaWrapper.Flags.relax_complex_for_REB.copy(), options={
+        self.rw.run(RosettaWrapper.Flags().relax_pinned_positions, options={
             "-in:file:s": os.path.normpath(self.reference_renum_pdb),
             "-out:path:all": intermediary_dir,
             "-in:file:native": os.path.normpath(self.reference_renum_pdb),
@@ -151,7 +127,7 @@ class VIPER:
         best_pdb, scores = RosettaWrapper.ScoreFileParser.get_extremum(
             os.path.normpath(
                 os.path.join(intermediary_dir,
-                             f"score{RosettaWrapper.Flags.relax_complex_for_REB['-out:suffix']}.sc")),
+                             f"score{RosettaWrapper.Flags().relax_pinned_positions['-out:suffix']}.sc")),
             "total_score")
         logging.debug(f"Best PDB is '{best_pdb}' with score {scores['total_score']}")
         self.reference_renum_relaxed = Path(os.path.normpath(
@@ -170,7 +146,7 @@ class VIPER:
         """
         # Compare residue involvement in all the relaxations of the experimental structure
         out_path = os.path.normpath(self.rw.make_dir(["residue_energy_breakdown", "reference_pdb"]))
-        self.rw.run(RosettaWrapper.Flags.residue_energy_breakdown.copy(), options={
+        self.rw.run(RosettaWrapper.Flags().residue_energy_breakdown, options={
             "-in:file:l": os.path.normpath(
                 os.path.join(cm().get("results_path"), "reference", "reference_ensemble")),
             "-out:file:silent": os.path.join(out_path,
