@@ -8,7 +8,7 @@ import statistics
 import sys
 from math import sqrt
 from pathlib import Path
-from typing import Optional, List, Union, Tuple
+from typing import Optional, List, Union, Tuple, final
 
 import Bio
 import numpy as np
@@ -22,7 +22,7 @@ from ConfigManager import ConfigManager
 from modules.wrappers.RosettaWrapper import REBprocessor
 from util import file_utils
 
-cm = ConfigManager.get_cm
+cm = ConfigManager.get_instance
 
 TOOL_VER = "0.2.1_alpha"
 
@@ -459,7 +459,6 @@ def remove_chain(pdb: str, chain_id: List[str], rename: str = None) -> None:
         logging.info(f"PDB with chains {ids} removed saved to {rename}!")
 
 
-# FIXME: Produces faulty PDB? When written out, there is data following TER in the same line
 def superimpose_multiple(pdb: str, ref_pdb: str, target_order: str, ref_order: str,
                          path: Union[str, Path, List[Union[str, Path]]]) -> Tuple[Path, float]:
     """
@@ -476,6 +475,8 @@ def superimpose_multiple(pdb: str, ref_pdb: str, target_order: str, ref_order: s
     :param path: Where to write the file to
     :return RMSD value for all-atom RMSD
     """
+    raise DeprecationWarning
+    # This was for testing and will be removed in the future
     aligner = Bio.Align.PairwiseAligner()
     aligner.mode = 'local'
     aligner.gap_score = -100.00
@@ -659,9 +660,11 @@ def superimpose_single(pdb: Union[str, Path], ref_pdb: Union[str, Path], query_c
     if aligner is None:
         aligner = Bio.Align.PairwiseAligner()
         aligner.mode = 'local'
-        aligner.gap_score = -100.0  # penalize gaps so that the largest subsection gets aligned
+        aligner.gap_score = -2.0
         aligner.match_score = 2.0
-        aligner.mismatch_score = 0.0  # allow mismatches within subsection
+        aligner.mismatch_score = -1
+        aligner.open_gap_score = -2
+        aligner.extend_gap_score = -.5
     alignment = aligner.align(ref_aaseq, query_aaseq)  # where in ref is target?
     # Determine best alignment
     curr_best = None
@@ -719,17 +722,6 @@ def superimpose_single(pdb: Union[str, Path], ref_pdb: Union[str, Path], query_c
     pdb_io = Bio.PDB.PDBIO()
     pdb_io.set_structure(query_chain_struc)
     pdb_io.save(os.path.normpath(p))
-    # Clean up resultant PDB, pdb_io.save() is buggy and writes data after the TER record to the file.
-    buf = ""
-    with open(p, "r") as out_pdb:
-        for line in out_pdb:
-            if line[0:3] == "TER":
-                buf += "TER\n"
-            else:
-                buf += line
-    os.remove(p)  # remove malformed PDB
-    with open(p, "x+") as pdb_out:
-        pdb_out.write(buf)
 
     return p, superimposer.rms
 
@@ -759,6 +751,8 @@ def superimpose_reflist(nodes: List[REBprocessor.Node], query_pdb: Union[str, Pa
         value decomposition (default: True)
     :return: A tuple of the path to the written out pdb and the superimposer RMSD
     """
+    raise DeprecationWarning
+    # This was for testing and will be removed in the future
     logging.info(f"Trying to superimpose {query_pdb}, chain {query_chain} onto {ref_pdb}, chain {ref_chain}...")
     try:
         query_pdb = Path(query_pdb).resolve(strict=True)
@@ -865,6 +859,8 @@ def kabsch(nodes: List[REBprocessor.Node], query_pdb: Union[str, Path], ref_pdb:
         value decomposition (default: True)
     :return: A tuple of the path to the written out pdb and the superimposer RMSD
     """
+    raise DeprecationWarning
+    # This was for testing and will be removed in the future
     logging.info(f"Trying to superimpose {query_pdb}, chain {query_chain} onto {ref_pdb}, chain {ref_chain}...")
     try:
         query_pdb = Path(query_pdb).resolve(strict=True)
@@ -1435,7 +1431,7 @@ def get_centroid(pdb: Union[str, Path], residues: List[Union[REBprocessor.Node, 
     """
     Returns the centroid of the list of residues as a tuple of X, Y, Z coordinates. Can be weighted according to the
     interaction energies. If weighting is desired, a list of REBprocessor.Node instances and to_chain must be supplied.
-    Interaction strengths get normalized to [0_old.001, 1] and will be multiplied with the difference of the centroid of
+    Interaction strengths get normalized to [0.001, 1] and will be multiplied with the difference of the centroid of
     each residue and the global (unweighted) centroid. If the interaction is repulsive, the centroid will be nudged
     away from the residue centroid by this multiplied difference, if it is attractive, it will be nudged towards the
     residue centroid by this multiplied difference.
@@ -1448,7 +1444,7 @@ def get_centroid(pdb: Union[str, Path], residues: List[Union[REBprocessor.Node, 
     """
     if isinstance(residues, list) and len(residues) == 0:
         if cm().get("permissive"):
-            logging.warning(f"Passed empty list to get_centroid()! Returning (0_old, 0_old, 0_old)...")
+            logging.warning(f"Passed empty list to get_centroid()! Returning (0.0, 0.0, 0.0)...")
             return 0.0, 0.0, 0.0
         else:
             logging.error(f"Cannot pass empty list to get_centroid()! Aborting...")
@@ -1723,3 +1719,4 @@ def get_dist_closest_atom(pdb: str, first: List[Union[int, REBprocessor.Node]],
     idx_first = neighbor_indices[idx_second][0]
 
     return closest, points_first[idx_first][-1], points_second[idx_second][-1]
+
