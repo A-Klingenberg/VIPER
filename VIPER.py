@@ -77,7 +77,15 @@ class VIPER:
             if mut not in initpop:
                 initpop.append(mut)
         initpop.append(pepseq)
-        ga = GAStrategy(self.reference_renum_pdb, [Population(lambda _: _, initpop)])
+        ga = GAStrategy(ref_pdb=self.reference_renum_pdb, populations=[Population(lambda _: _, initpop)], config={
+            "select_percent": 0.3,
+            "selection_mode": "ROULETTEWHEEL",
+            "crossover_mode": "MULTIPLE",
+            "crossover_chance": 0.1,
+            "mutation_rate": 0.05,
+            "mutation_bias": bmatrix,
+            "num_generations": 3
+        })
         ga.run()
 
 
