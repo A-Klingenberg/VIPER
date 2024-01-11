@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import List, Callable, Union
 
 import ConfigManager
-import OptimizationStrategy
+from . import OptimizationStrategy
 from modules.wrappers import RosettaWrapper
 from modules.wrappers.PEPstrMODWrapper import PEPstrMODWrapper
 from util import SCII, file_utils, PDBtool
