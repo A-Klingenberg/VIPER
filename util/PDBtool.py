@@ -457,7 +457,7 @@ def remove_chain(pdb: Union[Path, str], chain_id: List[str], out: Union[Path, st
                         and line[section_ssbond_chain_id2] not in ids):
                     o.write(line)
                     continue
-                o.write(line)  # is a line where chain id doesn't matter (HEADER, REMARK, ...)
+                # o.write(line)  # is a line where chain id doesn't matter (HEADER, REMARK, ...)
         logging.info(f"PDB with chains {ids} removed saved to {out_name}!")
     return Path(out_name)
 
