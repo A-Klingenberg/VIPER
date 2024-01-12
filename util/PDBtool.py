@@ -4,11 +4,12 @@ import collections
 import logging
 import os
 import pprint
+import random
 import statistics
 import sys
 from math import sqrt
 from pathlib import Path
-from typing import Optional, List, Union, Tuple, final
+from typing import Optional, List, Union, Tuple
 
 import Bio
 import numpy as np
@@ -432,19 +433,19 @@ def renumber_ascending(pdb: str, out_path: str = None) -> Path:
     return Path(out_name)
 
 
-def remove_chain(pdb: str, chain_id: List[str], rename: str = None) -> None:
+def remove_chain(pdb: Union[Path, str], chain_id: List[str], out: Union[Path, str] = None) -> Path:
     """
     Removes chains with a certain ID and save the output in a PDB.
 
     :param pdb: Path to PDB to be read
     :param chain_id: A list of ids to be deleted (i.e. ['A', 'E', 'P'])
-    :param rename: Optional name for PDB file being created, otherwise use "_removed_chains<ids>" appended to original name
+    :param out: Optional name for PDB file being created, otherwise use "_removed_chains<ids>" appended to original name
     """
     ids = ''.join(chain_id).upper()
     logging.info(f"Trying to remove chains {ids} from {pdb}...")
     out_name = pdb[:-4] + f"_removed_chains{ids}.pdb"
-    if rename:
-        out_name = rename
+    if out:
+        out_name = out
     with open(pdb, 'r') as i, open(out_name, 'w+') as o:
         for line in i:
             if line[0:6] in KEEP_LINES:
@@ -456,7 +457,8 @@ def remove_chain(pdb: str, chain_id: List[str], rename: str = None) -> None:
                     o.write(line)
                     continue
                 o.write(line)  # is a line where chain id doesn't matter (HEADER, REMARK, ...)
-        logging.info(f"PDB with chains {ids} removed saved to {rename}!")
+        logging.info(f"PDB with chains {ids} removed saved to {out_name}!")
+    return Path(out_name)
 
 
 def superimpose_multiple(pdb: str, ref_pdb: str, target_order: str, ref_order: str,
@@ -1178,30 +1180,53 @@ def center(pdb: str, rename: str = None) -> None:
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
 #  Should this be taken from pdb_1 or pdb_2? Configurable?
-def join(pdb_1: str, pdb_2: str, rename: str = None) -> None:
+def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str] = None) -> Path:
     f"""
     Joins together two PDB files by appending first PDBs atoms to second PDBs atoms
 
     :param pdb_1 : Location and name of PDB 1
     :param pdb_2 : Location and name of PDB 2
-    :param rename : Name of new file (default "{pdb_1}_{pdb_2}_concat.pdb"
+    :param out : Name of new file (default "{pdb_1}_{pdb_2}_concat.pdb"
     """
     logging.info(f"Trying to join '{pdb_1}' and '{pdb_2}'...")
     atoms_lines = []
-    pdbs = [pdb_1, pdb_2]
+    chain1, chain2 = get_chains(pdb_1), get_chains(pdb_2)
+    conflicts = []
+    used_replacements = []
+    for c1 in chain1:
+        for c2 in chain2:
+            if c2 == c1:
+                found_replacement = False
+                for repl in ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R",
+                             "S", "T", "U", "V", "W", "X", "Y", "Z"]:
+                    if repl not in chain1 and repl not in chain2 and repl not in used_replacements:
+                        found_replacement = True
+                        used_replacements.append(repl)
+                        conflicts.append((c2, repl))
+                if not found_replacement:
+                    logging.warning(f"There were conflicting chain ids in {pdb_1} and {pdb_2} ({c2}), but no suitable "
+                                    f"replacement could be found!")
+                    if cm().get("permissive"):
+                        logging.warning("Continuing anyway - the resultant PDB will have a chain id twice!")
+                    else:
+                        raise ValueError(f"There were conflicting chain ids in {pdb_1} and {pdb_2} ({c2}), but no "
+                                         f"suitable replacement could be found!")
+    pdb_2 = os.path.normpath(update_chain_id(pdb_2, {orig: new for orig, new in conflicts}))
+    pdbs = (pdb_1, pdb_2)
     for pdb in pdbs:
         with open(pdb, "r") as i:
             for line in i:
                 if line[0:6] == "ATOM  " or line[0:6] == "TER   ":
                     atoms_lines.append(line)
     new_name = pdb_1[:-4] + "_" + pdb_2.split(os.sep)[-1][:-4] + "_concat.pdb"
-    if rename:
-        new_name = rename
+    if out:
+        new_name = out
     with open(new_name, "w") as o:
         for line in atoms_lines:
             o.write(line)
         o.write("END\n")
         logging.info(f"Wrote joined PDB to '{new_name}'!")
+    return new_name
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
@@ -1237,15 +1262,16 @@ def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> None:
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
-def update_chain_id(pdb: str, id_mapping: dict, rename: str = None) -> None:
+def update_chain_id(pdb: Union[Path, str], id_mapping: dict, out: Union[Path, str] = None) -> Path:
     """
     Update the labels based on submitted chain dictionary
     Ex of dictionary: {'A':'D', 'B':'E'}  A gets replaced with D and B gets replaced with E
 
     :param pdb: Path to the PDB to be read
     :param id_mapping: Dictionary of chain ids that need to be adjusted. Every chain id of _key_ gets replaced with _val_
-    :param rename: Optional new name for the PDB that is written. Default is '{pdb}_upd_chains.pdb'
+    :param out: Optional new name for the PDB that is written. Default is '{pdb}_upd_chains.pdb'
     """
+    pdb = os.path.normpath(pdb)
     logging.info(f"Updating chain ids in '{pdb}' using mapping {id_mapping}...")
     chain_info = {}
     new_order = []
@@ -1262,12 +1288,13 @@ def update_chain_id(pdb: str, id_mapping: dict, rename: str = None) -> None:
             atom['chain_id'] = id_mapping[chain]
             new_order.append(atom)
     new_name = pdb[:-4] + "_upd_chains.pdb"
-    if rename:
-        new_name = rename
+    if out:
+        new_name = out
     with open(new_name, "w") as f:
         f.write(rebuild_atom_line(new_order))
         f.write("TER\nEND\n")
         logging.info(f"Wrote PDB with updated chain ids to '{new_name}'")
+    return Path(new_name)
 
 
 def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, rename: str = None) -> Path:
@@ -1719,4 +1746,3 @@ def get_dist_closest_atom(pdb: str, first: List[Union[int, REBprocessor.Node]],
     idx_first = neighbor_indices[idx_second][0]
 
     return closest, points_first[idx_first][-1], points_second[idx_second][-1]
-
