@@ -96,6 +96,7 @@ def make_file(path: Union[str, Path, List[Union[str, Path]]], content: str, dry_
     :return: A Path object to the written out file
     """
     p = copy.deepcopy(path)
+    logging.debug(f"Trying to make file with passed path/elements: {p}")
     if isinstance(path, str) or isinstance(path, Path):
         p = [copy.deepcopy(Path(path))]
     for index, elem in enumerate(p):
