@@ -164,7 +164,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 elif not flip:
                     offspring.append(gene2)
         if self.config["crossover_mode"] == "SINGLE":
-            crossover_point = random.randrange(len(combined))
+            crossover_point = random.randrange(max(len(parent1), len(parent2)))
             offspring += parent1[:crossover_point]
             offspring += parent2[crossover_point:]
         return offspring
@@ -188,9 +188,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
 
         # Superimpose onto receptor and create merged pdb
         peptide_pdb, rms = PDBtool.superimpose_single(pdb, self.ref,
-                                              query_chain=f"{PDBtool.get_chains(os.path.normpath(pdb))[0]}",
-                                              ref_chain=f"{cm().get('partner_chain')}",
-                                              out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
+                                                      query_chain=f"{PDBtool.get_chains(os.path.normpath(pdb))[0]}",
+                                                      ref_chain=f"{cm().get('partner_chain')}",
+                                                      out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
         pdb = PDBtool.join(peptide_pdb, self.vsp)
 
         # Get binding energy
