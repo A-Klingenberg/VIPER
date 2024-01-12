@@ -220,8 +220,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     def run(self):
         for i in range(self.config["num_generations"]):
             logging.debug(f"Genetic Algorithm, generation {self.generation}")
+            pop_count = 0
             for pop in self.populations:
-                logging.debug(f"Old pop: {pprint.pformat(pop)}")
+                logging.debug(f"Old pop [#{pop_count}] : {pprint.pformat(pop)}")
                 old_num = len(pop)
                 families = []
                 parents = self._select(pop)
@@ -245,7 +246,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                     if candidate not in muts:
                         muts.append(candidate)
                 pop.update(muts)
-                logging.debug(f"New pop: {pop}")
+                logging.debug(f"New pop [#{pop_count}] : {pop}")
                 curr_best = pop.get_asc()[0]
                 logging.info(
                     f"Generation {self.generation}, best candidate: {curr_best} ({self.score_repo[curr_best]})")
+                pop_count += 1
+            self.generation += 1
