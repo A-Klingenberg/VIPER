@@ -12,7 +12,7 @@ from enum import IntEnum
 from io import StringIO
 from pathlib import Path
 from pprint import pformat
-from typing import Union, List, final, Optional, Tuple, Final
+from typing import Union, List, final, Optional, Tuple
 
 import pandas as pd
 
@@ -209,6 +209,7 @@ class RosettaWrapper(metaclass=Singleton._Singleton):
         logging.debug("With flag:" + pformat(flag))
         logging.debug("With override:" + pformat(override))
 
+        remove_parts = []
         if override:
             for k, v in override.items():
                 flag[k] = v
@@ -226,6 +227,8 @@ class RosettaWrapper(metaclass=Singleton._Singleton):
                     logging.error("No input file has been set!")
                     raise ValueError("No input file has been set!")
                 continue
+            elif "-in:file" in k and v is False:
+                remove_parts.append(k)
             if "-out:" in k and v is None:
                 if pdb is None:
                     logging.error("Can't derive path to output, because no input file has been set!")
@@ -272,6 +275,8 @@ class RosettaWrapper(metaclass=Singleton._Singleton):
             if "-mh:path:scores_BB_BB" in k and v is None:
                 flag[k] = os.path.join(os.path.normpath(cm().get("rosetta_config.path")), "main", "database",
                                        "additional_protocol_data", "motif_dock", "xh_16_")
+        for part in remove_parts:
+            flag.pop(part)
         logging.info("Final flag: " + pformat(flag))
         return flag
 
