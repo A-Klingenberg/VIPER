@@ -56,6 +56,9 @@ class Population:
     def __str__(self):
         return f"[{', '.join(self.individuals)}"[:-2] + "]"
 
+    def __repr__(self):
+        return self.__str__()
+
     # TODO: This is probably too hacky, write something more robust
     def __contains__(self, item):
         # Assume individual is a string of amino acids in single-letter abbreviation
@@ -76,6 +79,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     generation: int = 0
     rw: RosettaWrapper = None
     out_path: Path = None
+    ref: Union[Path, str] = None
+    vsp: Union[Path, str] = None
 
     def __init__(self, ref_pdb: Union[Path, str], populations: List[Population], score_func: Callable = None,
                  select: Callable = None,
@@ -107,6 +112,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         if propagate_score_func:
             for pop in self.populations:
                 pop.score_func = self._score_func
+        self.vsp = PDBtool.remove_chain(self.ref, [cm().get("partner_chain")],
+                                        os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
 
     def select(self, population: Population, n: int = None):
         take_num = math.ceil(self.config["select_percent"] * len(population)) if n is None else n
@@ -176,18 +183,20 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         # Get 3D structure
         pdb = PEPstrMODWrapper.submit_peptide(sequence=peptide)
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
-        pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
+        peptide_pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
 
-        # Superimpose onto receptor
+        # Superimpose onto receptor and create merged pdb
         pdb, rms = PDBtool.superimpose_single(pdb, self.ref,
                                               query_chain=f"{PDBtool.get_chains(os.path.normpath(pdb))[0]}",
                                               ref_chain=f"{cm().get('partner_chain')}",
-                                              out_path=[use_path_items, "aligned", f"{peptide}_aligned.pdb"])
+                                              out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
+        pdb = PDBtool.join(pdb, self.vsp)
 
         # Get binding energy
         score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "interface_score.sc")
         self.rw.run(RosettaWrapper.Flags().interface_analyzer, options={
-            "-in:file:s": pdb,
+            "-in:file:s": False,
+            "-s": pdb,
             "-out:file:score_only": os.path.normpath(score_path),
         })
         best_pdb, scores = RosettaWrapper.ScoreFileParser.get_extremum(
@@ -197,7 +206,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         best_rosetta_score = scores["dG_separated"]
 
         # Calculate SCII
-        scii = SCII.scii_for_pdb(best_pdb, radius=self.config["score_scii_radius"])
+        scii = SCII.scii_for_pdb(peptide_pdb, radius=self.config["score_scii_radius"])
 
         # Calculate composite score
         # Since 0.3 - 0.4 was the area of ambiguity stated in the original SCII paper, with larger values indicating
