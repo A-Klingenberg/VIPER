@@ -97,13 +97,13 @@ class PEPstrMODWrapper:
 
         # official timed out, use redundancy
         if PEPstrMODWrapper._use_redundancy:
+            logging.warning("Official PEPstrMOD service timed out, trying to use backup!")
             return PEPstrMODWrapper.submit_peptide_backup(sequence, options)
 
         # Extract PDB, remove preceding newline
         pdb = re.search(r"<pre>(?P<pdb>.+)</pre>", results_page.text, re.DOTALL).group("pdb")[1:]
 
         if cm().get("verbose"):
-            logging.warning("Official PEPstrMOD service timed out, trying to use backup!")
             logging.debug(f"Got result PDB from PEPstrMOD: {pdb}")
 
         return pdb
@@ -187,7 +187,6 @@ class PEPstrMODWrapper:
 
         # Extract PDB, remove preceding newline
         pdb = str(results_page.text)
-
 
         if cm().get("verbose"):
             logging.debug(f"Got result PDB from PEPstrMOD: {pdb}")
