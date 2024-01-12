@@ -441,6 +441,7 @@ def remove_chain(pdb: Union[Path, str], chain_id: List[str], out: Union[Path, st
     :param chain_id: A list of ids to be deleted (i.e. ['A', 'E', 'P'])
     :param out: Optional name for PDB file being created, otherwise use "_removed_chains<ids>" appended to original name
     """
+    pdb = os.path.normpath(pdb)
     ids = ''.join(chain_id).upper()
     logging.info(f"Trying to remove chains {ids} from {pdb}...")
     out_name = pdb[:-4] + f"_removed_chains{ids}.pdb"
