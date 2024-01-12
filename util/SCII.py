@@ -749,7 +749,7 @@ def scii_from_seq(seq: str) -> float:
             buf[aa]["partners"].append(aas[i])
             buf[aa]["scores"].append(prop)
         buf[aa]["index_number"] = sum(buf[aa]["scores"]) / book_summed_propensities[aa]
-    print(pprint.pformat(buf))
+    # print(pprint.pformat(buf))
     inums = [buf[aa]["index_number"] for aa in aas]
     return statistics.mean(inums)
 
@@ -790,7 +790,7 @@ def scii_for_res(res: str, partners: Union[str, List[str]]) -> float:
             buf[aa]["partners"].append(aas[i])
             buf[aa]["scores"].append(prop)
         buf[aa]["index_number"] = sum(buf[aa]["scores"]) / book_summed_propensities[aa]
-    print(pprint.pformat(buf))
+    # print(pprint.pformat(buf))
     return statistics.mean([buf[aa]["index_number"] for aa in aas])
 
 
@@ -832,7 +832,7 @@ def scii_for_pdb(path: Union[str, Path], chain: str = None, radius: float = 10.0
         res_coord = {aa: None for aa in aas}
         for aa, res_id in aas:
             res_coord[(aa, res_id)] = PDBtool.get_centroid(path, res_id)
-        print(pprint.pformat(res_coord))
+        # print(pprint.pformat(res_coord))
     else:
         _ = PDBtool.get_atoms_on_chain(path, chain)
         residues = {}
@@ -840,7 +840,7 @@ def scii_for_pdb(path: Union[str, Path], chain: str = None, radius: float = 10.0
             if atom["comp_num"] not in residues:
                 residues[atom["comp_num"]] = []
             residues[atom["comp_num"]].append(atom)
-        print(pprint.pformat(residues))
+        # print(pprint.pformat(residues))
     sciis = {}
     if use_centroid:
         for residue1, centroid1 in res_coord.items():
@@ -851,7 +851,7 @@ def scii_for_pdb(path: Union[str, Path], chain: str = None, radius: float = 10.0
                 if math.sqrt((centroid1[0] - centroid2[0]) ** 2 + (centroid1[1] - centroid2[1]) ** 2 + (
                         centroid1[2] - centroid2[2]) ** 2) <= radius:
                     partners.append(residue2[0])
-            print(f"partners for res {residue1}: " + pprint.pformat(partners))
+            # print(f"partners for res {residue1}: " + pprint.pformat(partners))
             sciis[residue1[1]] = scii_for_res(residue1[0], partners)
     else:
         # Maybe faster with KD-Tree?
