@@ -184,14 +184,14 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         # Get 3D structure
         pdb = PEPstrMODWrapper.submit_peptide(sequence=peptide)
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
-        peptide_pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
+        pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
 
         # Superimpose onto receptor and create merged pdb
-        pdb, rms = PDBtool.superimpose_single(pdb, self.ref,
+        peptide_pdb, rms = PDBtool.superimpose_single(pdb, self.ref,
                                               query_chain=f"{PDBtool.get_chains(os.path.normpath(pdb))[0]}",
                                               ref_chain=f"{cm().get('partner_chain')}",
                                               out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
-        pdb = PDBtool.join(pdb, self.vsp)
+        pdb = PDBtool.join(peptide_pdb, self.vsp)
 
         # Get binding energy
         score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "interface_score.sc")
