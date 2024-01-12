@@ -1212,6 +1212,7 @@ def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str]
                     else:
                         raise ValueError(f"There were conflicting chain ids in {pdb_1} and {pdb_2} ({c2}), but no "
                                          f"suitable replacement could be found!")
+    pdb_1 = os.path.normpath(pdb_1)
     pdb_2 = os.path.normpath(update_chain_id(pdb_2, {orig: new for orig, new in conflicts}))
     pdbs = (pdb_1, pdb_2)
     for pdb in pdbs:
