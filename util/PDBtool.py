@@ -1204,6 +1204,7 @@ def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str]
                         found_replacement = True
                         used_replacements.append(repl)
                         conflicts.append((c2, repl))
+                        break
                 if not found_replacement:
                     logging.warning(f"There were conflicting chain ids in {pdb_1} and {pdb_2} ({c2}), but no suitable "
                                     f"replacement could be found!")
@@ -1287,7 +1288,8 @@ def update_chain_id(pdb: Union[Path, str], id_mapping: dict, out: Union[Path, st
         chain_info[chain] = atoms
     for chain in chain_info:
         for atom in chain_info[chain]:
-            atom['chain_id'] = id_mapping[chain]
+            if atom['chain_id'] in id_mapping:
+                atom['chain_id'] = id_mapping[chain]
             new_order.append(atom)
     new_name = pdb[:-4] + "_upd_chains.pdb"
     if out:
