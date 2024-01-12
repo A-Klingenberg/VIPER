@@ -83,7 +83,8 @@ class VIPER:
             "crossover_chance": 0.1,
             "mutation_rate": 0.05,
             "mutation_bias": bmatrix,
-            "num_generations": 3
+            "num_generations": 3,
+            "score_scii_radius": 10,
         })
         ga.run()
 
