@@ -112,6 +112,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         if propagate_score_func:
             for pop in self.populations:
                 pop.score_func = self._score_func
+        os.makedirs(os.path.join(cm().get("results_path"), "GA"), exist_ok=True)
         self.vsp = PDBtool.remove_chain(self.ref, [cm().get("partner_chain")],
                                         os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
 
