@@ -557,6 +557,7 @@ class Flags(metaclass=Singleton._Singleton):
     def interface_analyzer(self) -> dict:
         return {
             "app": "InterfaceAnalyzer",
+            "-score:weights": "ref2015",
             "-compute_packstat": True,
             "-tracer_data_print": False,
             "-pack_input": True,
