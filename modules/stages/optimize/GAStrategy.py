@@ -181,6 +181,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         return "".join(_)
 
     def score(self, peptide: str) -> float:
+        if peptide in self.score_repo:
+            return self.score_repo[peptide]["total"]
         # Get 3D structure
         pdb = PEPstrMODWrapper.submit_peptide(sequence=peptide)
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
