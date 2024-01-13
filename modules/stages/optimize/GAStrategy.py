@@ -122,7 +122,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         # Get scores for population
         for individual in population:
             if individual in self.score_repo:
-                lookup[individual] = self.score_repo[individual]
+                lookup[individual] = self.score_repo[individual]["total"]
                 continue
             sc = self._score_func(individual)
             lookup[individual] = sc
@@ -214,8 +214,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         # more stable peptides and smaller values indicating less stable peptides
         # Therefore a percentage based bonus or malus will be applied if the value is higher or lower thant 0.3 - 0.4
         bonus = round((scii - 0.35), 1) * 0.5 + 1
-        self.score_repo[peptide] = best_rosetta_score * bonus
-        return self.score_repo[peptide]
+        self.score_repo[peptide] = {"total": best_rosetta_score * bonus, "rosetta_score": best_rosetta_score,
+                                    "SCII": scii, "calc_scii_bonus": bonus}
+        return self.score_repo[peptide]["total"]
 
     def run(self):
         for i in range(self.config["num_generations"]):
@@ -249,6 +250,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 logging.debug(f"New pop [#{pop_count}] : {pop}")
                 curr_best = pop.get_asc()[0]
                 logging.info(
-                    f"Generation {self.generation}, best candidate: {curr_best} ({self.score_repo[curr_best]})")
+                    f"Generation {self.generation}, best candidate: {curr_best} ({self.score_repo[curr_best]['total']})")
                 pop_count += 1
             self.generation += 1
+        logging.info(pprint.pformat(self.score_repo))
