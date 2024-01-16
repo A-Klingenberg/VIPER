@@ -105,7 +105,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.config["mutation_bias"] = config.get("mutation_bias", BLOSUM.BLOSUM62_shifted)
         self.config["num_generations"] = config.get("num_generations", 5)
         self.config["getstruc_backoff"] = config.get("getstruc_backoff",
-                                                     4 * 60)  # wait 0-4 minutes, try to not stress webservice
+                                                     10 * 60)  # wait 0-10 minutes, try to not stress webservice
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
