@@ -547,6 +547,7 @@ class Flags(metaclass=Singleton._Singleton):
     def residue_energy_breakdown(self) -> dict:
         return {
             "app": "residue_energy_breakdown",
+            "-score:weights": "ref2015",
             "-out:file:silent": None,
             "-run:constant_seed": None,
             "-run:jran": None,
@@ -563,7 +564,6 @@ class Flags(metaclass=Singleton._Singleton):
             "-pack_input": True,
             "-pack_separated": True,
             "-add_regular_scores_to_scorefile": True,
-            "-atomic_burial_cutoff": 0.01,
             "-sasa_calculator_probe_radius": 1.4,
             "-pose_metrics::interface_cutoff": 8.0,
             "-use_input_sc": None,
@@ -576,6 +576,7 @@ class Flags(metaclass=Singleton._Singleton):
     def relax_pinned_positions(self) -> dict:
         return {
             "app": "relax",
+            "-score:weights": "ref2015",
             "-in:file:s": None,
             "-out:path:all": None,
             "-out:suffix": "_relax_pinned",
@@ -596,9 +597,10 @@ class Flags(metaclass=Singleton._Singleton):
         }
 
     @property
-    def relax_partner_protein(self) -> dict:
+    def relax_base(self) -> dict:
         return {
             "app": "relax",
+            "-score:weights": "ref2015",
             "-in:file:s": None,
             "-out:path:all": None,
             "-out:suffix": "_relax_partner",
@@ -614,34 +616,37 @@ class Flags(metaclass=Singleton._Singleton):
         }
 
     @property
-    def relax_peptide_normal_mode(self) -> dict:
+    def relax_normal_mode(self) -> dict:
         return {
             "app": "rosetta_scripts",
+            "-score:weights": "ref2015",
             "-in:file:s": None,
             "-nstruct": None,  # relax_peptide_nmr_runs
             "-parser:protocol": os.path.join(os.path.realpath(__file__), "..", "..", "util", "rosetta_scripts",
                                              "normal_mode_relax.xml"),
             "-out:path:all": None,
-            "-out:suffix": "_relax_peptide_normal_mode",
+            "-out:suffix": "_relax_normal_mode",
             "-out:no_color": True,
         }
 
     @property
-    def relax_peptide_backbone(self) -> dict:
+    def relax_backbone(self) -> dict:
         return {
             "app": "relax",
+            "-score:weights": "ref2015",
             "-in:file:s": None,
             "-nstruct": None,  # relax_peptide_bb_runs
             "-backrub:ntrials": None,  # relax_peptide_bb_ntrials
             "-out:path:all": None,
-            "-out:suffix": "_relax_peptide_backbone",
+            "-out:suffix": "_relax_backbone",
             "-out:no_color": True,
         }
 
     @property
-    def relax_peptide_fast(self) -> dict:
+    def relax_thorough(self) -> dict:
         return {
             "app": "relax",
+            "-score:weights": "ref2015",
             "-in:file:s": None,
             "-nstruct": None,  # relax_peptide_fast_runs
             "-relax:thorough": None,
@@ -654,6 +659,7 @@ class Flags(metaclass=Singleton._Singleton):
     def prepack_complex(self) -> dict:
         return {
             "app": "docking_prepack_protocol",
+            "-score:weights": "ref2015",
             "-in:file:s": None,
             "-unboundrot": None,  # pdb
             "-nstruct": 1,
@@ -671,6 +677,7 @@ class Flags(metaclass=Singleton._Singleton):
     def docking_ensemble(self) -> dict:
         return {
             "app": "docking_protocol",
+            "-score:weights": "ref2015",
             "-in:file:s": None,
             "-unboundrot": None,  # pdb
             "-nstruct": None,  # docking_runs
@@ -698,6 +705,7 @@ class Flags(metaclass=Singleton._Singleton):
     def refine_local(self) -> dict:
         return {
             "app": "docking_protocol",
+            "-score:weights": "ref2015",
             "-in:file:s": None,
             "-nstruct": None,  # refine_runs
             "-docking_local_refine": None,
