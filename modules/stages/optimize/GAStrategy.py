@@ -105,7 +105,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.config["mutation_bias"] = config.get("mutation_bias", BLOSUM.BLOSUM62_shifted)
         self.config["num_generations"] = config.get("num_generations", 5)
         self.config["getstruc_backoff"] = config.get("getstruc_backoff",
-                                                     2 * 60)  # wait 0-2 minutes, try to not stress webservice
+                                                     4 * 60)  # wait 0-4 minutes, try to not stress webservice
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
@@ -207,6 +207,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
 
         # Make sure complex for binding energy scoring is energetically favorable / relaxed
         relax_path = os.path.join(complex_pdb.parent, "relax")
+        os.makedirs(os.path.join(relax_path, "complex"), exist_ok=True)
         self.rw.run(RosettaWrapper.Flags().relax_base, options={
             "-in:file:s": complex_pdb,
             "-nstruct": 100,
