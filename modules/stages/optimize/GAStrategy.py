@@ -4,18 +4,21 @@ import copy
 import itertools
 import logging
 import math
+import multiprocessing
 import os
 import pprint
 import random
+import shutil
+import time
 from pathlib import Path
-from typing import List, Callable, Union
+from typing import List, Callable, Union, Tuple
 
 import ConfigManager
-from . import OptimizationStrategy
 from modules.wrappers import RosettaWrapper
 from modules.wrappers.PEPstrMODWrapper import PEPstrMODWrapper
 from util import SCII, file_utils, PDBtool
 from util.BLOSUM import BLOSUM
+from . import OptimizationStrategy
 
 cm = ConfigManager.ConfigManager.get_instance
 
@@ -101,6 +104,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.config["mutation_rate"] = config.get("mutation_rate", 0.05)
         self.config["mutation_bias"] = config.get("mutation_bias", BLOSUM.BLOSUM62_shifted)
         self.config["num_generations"] = config.get("num_generations", 5)
+        self.config["getstruc_backoff"] = config.get("getstruc_backoff",
+                                                     2 * 60)  # wait 0-2 minutes, try to not stress webservice
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
@@ -114,18 +119,16 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 pop.score_func = self._score_func
         os.makedirs(os.path.join(cm().get("results_path"), "GA"), exist_ok=True)
         self.vsp = PDBtool.remove_chain(self.ref, [cm().get("partner_chain")],
-                                        os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
+                                       os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
 
     def select(self, population: Population, n: int = None):
         take_num = math.ceil(self.config["select_percent"] * len(population)) if n is None else n
-        lookup = {}
         # Get scores for population
-        for individual in population:
-            if individual in self.score_repo:
-                lookup[individual] = self.score_repo[individual]["total"]
-                continue
-            sc = self._score_func(individual)
-            lookup[individual] = sc
+        # Scoring may be very time intensive, so do this concurrently
+        with multiprocessing.Pool() as pool:
+            pool.map(self._score_func, population)
+        # We can now be sure that we have scores for every individual in this population
+        lookup = {individual: self.score_repo[individual]["total"] for individual in population}
         if self.config["selection_mode"] == "UNIFORM":
             return random.choices(list(lookup.keys()), k=take_num)
         # Order by fitness
@@ -157,7 +160,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 if random.random() < self.config["crossover_chance"] and not end:
                     flip = not flip
                 if flip:
-                    if gene1 is None:
+                    if gene1 is None:  # handle if one individual has a shorter genome than the other
                         flip = not flip
                     else:
                         offspring.append(gene1)
@@ -180,10 +183,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                     _[n] = random.choices(population=list(BLOSUM.BLOSUM62_shifted.get(gene)), k=1)[0]
         return "".join(_)
 
-    def score(self, peptide: str) -> float:
-        if peptide in self.score_repo:
-            return self.score_repo[peptide]["total"]
-        # Get 3D structure
+    def _getstruc(self, peptide: str) -> Tuple[Path, Path]:
+        if backoff := self.config["getstruc_backoff"]:
+            time.sleep(random.randrange(0, backoff))
         pdb = PEPstrMODWrapper.submit_peptide(sequence=peptide)
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
         pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
@@ -193,13 +195,34 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                       query_chain=f"{PDBtool.get_chains(os.path.normpath(pdb))[0]}",
                                                       ref_chain=f"{cm().get('partner_chain')}",
                                                       out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
-        pdb = PDBtool.join(peptide_pdb, self.vsp)
+        return PDBtool.join(peptide_pdb, self.vsp), peptide_pdb
+
+    def score(self, peptide: str) -> float:
+        if peptide in self.score_repo:
+            return self.score_repo[peptide]["total"]
+        start = time.time()
+
+        # Get 3D structure
+        complex_pdb, peptide_pdb = self._getstruc(peptide)
+
+        # Make sure complex for binding energy scoring is energetically favorable / relaxed
+        relax_path = os.path.join(complex_pdb.parent, "relax")
+        self.rw.run(RosettaWrapper.Flags().relax_base, options={
+            "-in:file:s": complex_pdb,
+            "-nstruct": 100,
+            "-out:path:all": os.path.join(relax_path, "complex"),
+            "-out:suffix": "_relax",
+        })
+        best_complex, complex_scores = RosettaWrapper.ScoreFileParser.get_extremum(
+            os.path.normpath(os.path.join(relax_path, "complex", f"score_relax.sc")), "total_score")
+        shutil.copyfile(os.path.join(relax_path, "complex", best_complex + ".pdb"),
+                        os.path.join(complex_pdb.parent, "best_complex.pdb"))
 
         # Get binding energy
         score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "interface_score.sc")
         self.rw.run(RosettaWrapper.Flags().interface_analyzer, options={
             "-in:file:s": False,
-            "-s": pdb,
+            "-s": os.path.join(complex_pdb.parent, "best_complex.pdb"),
             "-out:file:score_only": os.path.normpath(score_path),
         })
         best_pdb, scores = RosettaWrapper.ScoreFileParser.get_extremum(
@@ -218,6 +241,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         bonus = round((scii - 0.35), 1) * 0.5 + 1
         self.score_repo[peptide] = {"total": best_rosetta_score * bonus, "rosetta_score": best_rosetta_score,
                                     "SCII": scii, "calc_scii_bonus": bonus}
+        logging.debug(f"Scoring {peptide} took {(time.time() - start) / 60:.1f} minutes!")
         return self.score_repo[peptide]["total"]
 
     def run(self):
@@ -233,26 +257,30 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 # duplicate the first entry and append it.
                 if len(parents) % 2 != 0:
                     parents.append(parents[0])
-                parents = [(parents[i], parents[i + 1]) for i in range(0, len(parents), 2)]
-                for p1, p2 in parents:
-                    families.append(p1)
-                    families.append(p2)
+                parents_paired = [(parents[i], parents[i + 1]) for i in range(0, len(parents), 2)]
+                for p1, p2 in parents_paired:
                     offspring = self._crossover(p1, p2)
+                    while offspring == p1 or offspring == p2:
+                        offspring = self._crossover(p1, p2)
                     if offspring not in families:
                         families.append(offspring)
-                muts = []
+                finalists = []
                 for member in families:
-                    muts.append(self._mutate(member))
-                # Pad to previous length with mutants of randomly chosen finalists of this generation
-                while len(muts) < old_num:
-                    candidate = self._mutate(random.choice(muts))
-                    if candidate not in muts:
-                        muts.append(candidate)
-                pop.update(muts)
+                    finalists.append(self._mutate(member))
+                # Pad to previous length with mutants of randomly chosen offspring of this generation
+                while len(finalists) < old_num - len(parents):
+                    candidate = self._mutate(random.choice(families))
+                    if candidate not in finalists:
+                        finalists.append(candidate)
+                for p in parents:
+                    finalists.append(p)
+                pop.update(finalists)
                 logging.debug(f"New pop [#{pop_count}] : {pop}")
                 curr_best = pop.get_asc()[0]
                 logging.info(
                     f"Generation {self.generation}, best candidate: {curr_best} ({self.score_repo[curr_best]['total']})")
                 pop_count += 1
             self.generation += 1
-        logging.info(pprint.pformat(self.score_repo))
+        best = min(self.score_repo.items(), key=lambda item: item[1]["total"])
+        logging.info(f"Best found candidate is {best[0]} with score {best[1]['total']}.")
+        logging.debug(pprint.pformat(self.score_repo))
