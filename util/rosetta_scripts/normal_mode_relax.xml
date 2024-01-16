@@ -1,6 +1,6 @@
 <ROSETTASCRIPTS>
 	<SCOREFXNS>
-		<ScoreFunction name="bn15_cart" weights="beta_nov15_cart" />
+		<ScoreFunction name="r15_cart" weights="ref2015" />
 	</SCOREFXNS>
 	<RESIDUE_SELECTORS>
 	</RESIDUE_SELECTORS>
@@ -19,5 +19,5 @@
 	<PROTOCOLS>
 		<Add mover="nma" />
 	</PROTOCOLS>
-	<OUTPUT scorefxn="bn15_cart" />
+	<OUTPUT scorefxn="r15_cart" />
 </ROSETTASCRIPTS>
