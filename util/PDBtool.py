@@ -4,7 +4,6 @@ import collections
 import logging
 import os
 import pprint
-import random
 import statistics
 import sys
 from math import sqrt
@@ -426,7 +425,7 @@ def renumber_ascending(pdb: str, out_path: str = None) -> Path:
         old = old_entry[1] + " " + str(old_entry[0]).rjust(4)
         new = old_entry[1] + " " + str(new_entry).rjust(4)
         ssbond = ssbond.replace(old, new, 1)
-    with open(out_name, "w+") as o:
+    with open(out_name, "w") as o:
         o.write(header)
         o.write(ssbond)
         o.write(coordinates)
@@ -1220,6 +1219,7 @@ def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str]
         with open(pdb, "r") as i:
             for line in i:
                 if line[0:6] == "ATOM  " or line[0:6] == "TER   ":
+                    # FIXME: Update atom and residue numbering as well!!
                     atoms_lines.append(line)
     new_name = pdb_1[:-4] + "_" + pdb_2.split(os.sep)[-1][:-4] + "_concat.pdb"
     if out:
@@ -1229,7 +1229,8 @@ def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str]
             o.write(line)
         o.write("END\n")
         logging.info(f"Wrote joined PDB to '{new_name}'!")
-    return new_name
+    finalized = renumber_ascending(new_name, new_name)
+    return finalized
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
