@@ -208,9 +208,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         # Make sure complex for binding energy scoring is energetically favorable / relaxed
         relax_path = os.path.join(complex_pdb.parent, "relax")
         os.makedirs(os.path.join(relax_path, "complex"), exist_ok=True)
-        self.rw.run(RosettaWrapper.Flags().relax_base, options={
+        self.rw.run(RosettaWrapper.Flags().relax_base, flag_suffix=peptide, options={
             "-in:file:s": complex_pdb,
-            "-nstruct": 100,
+            "-nstruct": 10,
             "-out:path:all": os.path.join(relax_path, "complex"),
             "-out:suffix": "_relax",
         })
@@ -221,7 +221,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
 
         # Get binding energy
         score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "interface_score.sc")
-        self.rw.run(RosettaWrapper.Flags().interface_analyzer, options={
+        self.rw.run(RosettaWrapper.Flags().interface_analyzer, flag_suffix=peptide, options={
             "-in:file:s": False,
             "-s": os.path.join(complex_pdb.parent, "best_complex.pdb"),
             "-out:file:score_only": os.path.normpath(score_path),
