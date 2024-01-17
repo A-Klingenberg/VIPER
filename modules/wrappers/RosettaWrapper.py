@@ -5,8 +5,10 @@ import copy
 import csv
 import logging
 import os.path
+import pprint
 import re
 import subprocess
+import uuid
 from dataclasses import dataclass, field
 from enum import IntEnum
 from io import StringIO
@@ -136,7 +138,7 @@ class RosettaWrapper(metaclass=Singleton._Singleton):
                 else:
                     raise RuntimeError("Rosetta threw errors: " + res.stderr)
 
-    def run(self, flag: dict, options: Union[str, Path, dict], app: str = None) -> None:
+    def run(self, flag: dict, options: Union[str, Path, dict], app: str = None, flag_suffix: str = None) -> None:
         """
         This method provides a high level interface for running Rosetta apps.
 
@@ -146,6 +148,8 @@ class RosettaWrapper(metaclass=Singleton._Singleton):
             You may also pass a str/Path to an existing flag file. In this case you MUST pass a Rosetta app in 'app'
         :param app: Which app to use (optional). In case 'app' is specified in either 'flag' or 'options' has a value
             set for the key "app", that app will be used instead
+        :param flag_suffix: Which suffix to append to the resulting flag file. If None, a UUID will be used to prevent
+            overwriting the configuration of a previous run
         :return: None
         """
         if isinstance(options, str) or isinstance(options, Path):
@@ -186,7 +190,10 @@ class RosettaWrapper(metaclass=Singleton._Singleton):
             if use_app is None:
                 raise ValueError("Couldn't determine which app to use! Please supply the name of the Rosetta app in "
                                  "either the flag dictionary or the options dictionary.")
-            name = f"flag_{app_name}"
+            if flag_suffix:
+                name = f"flag_{app_name}_{flag_suffix}"
+            else:
+                name = f"flag_{app_name}_{uuid.uuid4()}"
             flag_path = RosettaWrapper.make_options_file(filename=name, options=o)
             RosettaWrapper._dispatch(use_app, flag_path)
 
@@ -294,7 +301,7 @@ class ScoreFileParser:
         :param score_file: Which score file to read
         :return: A dictionary containing the values for each pdb
         """
-        logging.info(f"Reading in score file {score_file}...")
+        logging.debug(f"Reading in score file {score_file}...")
         formatted = ""
         # Reformat to CSV-like
         with open(score_file, "r") as i:
@@ -317,6 +324,7 @@ class ScoreFileParser:
                 logging.warning(f"Encountered an error while processing score file {score_file}! Stacktrace: {e}")
             else:
                 raise RuntimeError(e)
+        logging.debug(f"Scores are: {pprint.pformat(scores)}")
         return scores
 
     class ExtremumType(IntEnum):
@@ -337,14 +345,17 @@ class ScoreFileParser:
         :param extremum_type: Which extremum to search for (standard: ExtremumType.MINIMUM)
         :return: A tuple in the format ("path_to_pdb_file", {dict of values for columns}) or None
         """
+        logging.debug(f"Getting extremum for file {score_file} ...")
         scores = ScoreFileParser.read_in(score_file)
         curr_bound = 10000000000
         curr_best_pdb = None
         for pdb, values in scores.items():
             if v := values.get(column, None):
                 if extremum_type * v < curr_bound:
+                    logging.debug(f"{pdb} is new best value with score {scores[pdb]}")
                     curr_best_pdb = (pdb, scores[pdb])
                     curr_bound = extremum_type * v
+        logging.debug(f"Found extremum: {curr_best_pdb}")
         return curr_best_pdb
 
 
