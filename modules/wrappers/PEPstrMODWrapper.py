@@ -80,7 +80,7 @@ class PEPstrMODWrapper:
         # TODO: Find better marker for the results being ready?
         results_page = requests.get(pdb_url, timeout=300)
         interval = 60
-        wait_limit = 30
+        wait_limit = 2.5 * 60  # 2.5 hours maximum wait per job until switch over to backup
         wait_count = 0
         while "HEADER PEPstrMOD" not in results_page.text:
             if wait_count > wait_limit:
