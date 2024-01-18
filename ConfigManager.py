@@ -5,10 +5,13 @@ import argparse
 import json
 import logging
 import os.path
+import random
 import sys
 from pathlib import Path
 from pprint import pformat
 from typing import Optional, Any
+
+import numpy.random
 
 import version
 from util import Singleton
@@ -107,6 +110,10 @@ class ConfigManager(metaclass=Singleton._Singleton):
         if p is None:
             p = "output"  # Fallback
         self.results_path = os.path.join(self.program_path, p) + os.sep
+
+        # Seed randomness
+        random.seed(self.get("random_seed"))
+        numpy.random.seed(self.get("random_seed"))
 
         # Validate Rosetta path
         if r := self.get("rosetta_config.path"):

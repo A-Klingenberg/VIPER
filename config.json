@@ -1,6 +1,7 @@
 {
   "log_path": "",
   "verbose": false,
+  "random_seed": 3333333,
   "num_CPU_cores": 4,
   "results_path": "output",
   "vsp_chain": "",
