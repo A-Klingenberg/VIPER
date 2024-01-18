@@ -35,11 +35,13 @@ class Population:
             self.individuals = individuals
 
     # TODO: Probably better to remove these two alltogether
-    def get_desc(self) -> List:
-        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=scores, verbosity=cm().get("verbose")) if self.score_func is not None else None, reverse=True)
+    def get_desc(self, scores=None) -> List:
+        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=scores, verbosity=cm().get(
+            "verbose")) if self.score_func is not None else None, reverse=True)
 
-    def get_asc(self, scores = None) -> List:
-        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=scores, verbosity=cm().get("verbose")) if self.score_func is not None else None, reverse=False)
+    def get_asc(self, scores=None) -> List:
+        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=scores, verbosity=cm().get(
+            "verbose")) if self.score_func is not None else None, reverse=False)
 
     def update(self, individuals: List) -> Population:
         self.individuals = individuals
@@ -107,6 +109,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.config["num_generations"] = config.get("num_generations", 5)
         self.config["getstruc_backoff"] = config.get("getstruc_backoff",
                                                      10 * 60)  # wait 0-10 minutes, try to not stress webservice
+        self.config["num_relax_individual"] = config.get("num_relax_individual", 10)
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
@@ -120,7 +123,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 pop.score_func = self._score_func
         os.makedirs(self.out_path, exist_ok=True)
         self.vsp = PDBtool.remove_chain(self.ref, [cm().get("partner_chain")],
-                                       os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
+                                        os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
 
     def select(self, population: Population, n: int = None):
         take_num = round(self.config["select_percent"] * len(population)) if n is None else n
@@ -132,7 +135,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             shared_dict = manager.dict()
             shared_dict.update(self.score_repo)
             with multiprocessing.Pool() as pool:
-                pool.starmap(self._score_func, [(individual, shared_dict, self.out_path, cm().get("verbose")) for individual in population])
+                pool.starmap(self._score_func,
+                             [(individual, shared_dict, self.out_path, cm().get("verbose")) for individual in
+                              population])
             self.score_repo.update(shared_dict)
         # We can now be sure that we have scores for every individual in this population
         lookup = {individual: self.score_repo[individual]["total"] for individual in population}
@@ -204,23 +209,25 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                       out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
         return PDBtool.join(peptide_pdb, self.vsp), peptide_pdb
 
-    def score(self, peptide: str, shared_dict = None, base_log_path: Union[Path, str] = None, verbosity = None) -> float:
+    def score(self, peptide: str, shared_dict=None, base_log_path: Union[Path, str] = None, verbosity=None) -> float:
         if shared_dict is None:
             shared_dict = self.score_repo
         if base_log_path is None:
             base_log_path = self.out_path
         if peptide in shared_dict:
             return shared_dict[peptide]["total"]
-        # Because we are very likely running this in a separate process, it more robust/easier to log to separate log files
+        # Because we are likely running this in a separate process, log to separate files for a more robust approach
         os.makedirs(os.path.normpath(os.path.join(base_log_path, f"gen{self.generation}_{peptide}")), exist_ok=True)
         if verbosity:
             logging.basicConfig(level=logging.DEBUG,
-                                filename=os.path.normpath(os.path.join(base_log_path, f"gen{self.generation}_{peptide}", "score_log.txt")),
+                                filename=os.path.normpath(
+                                    os.path.join(base_log_path, f"gen{self.generation}_{peptide}", "score_log.txt")),
                                 format="%(asctime)s [%(levelname)s] (%(filename)s:%(module)s): %(message)s",
                                 force=True)
         else:
             logging.basicConfig(level=logging.INFO,
-                                filename=os.path.normpath(os.path.join(base_log_path, f"gen{self.generation}_{peptide}", "score_log.txt")),
+                                filename=os.path.normpath(
+                                    os.path.join(base_log_path, f"gen{self.generation}_{peptide}", "score_log.txt")),
                                 format="%(asctime)s [%(levelname)s] (%(filename)s:%(module)s): %(message)s",
                                 force=True)
         start = time.time()
@@ -233,7 +240,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         os.makedirs(os.path.join(relax_path, "complex"), exist_ok=True)
         self.rw.run(RosettaWrapper.Flags().relax_base, flag_suffix=peptide, options={
             "-in:file:s": complex_pdb,
-            "-nstruct": 10,
+            "-nstruct": self.config["num_relax_individual"],
             "-out:path:all": os.path.join(relax_path, "complex"),
             "-out:suffix": "_relax",
         })
@@ -252,7 +259,6 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         best_pdb, scores = RosettaWrapper.ScoreFileParser.get_extremum(
             os.path.normpath(score_path),
             "dG_separated")
-        best_pdb = f"GA/gen{self.generation}_{peptide}/{best_pdb}.pdb"
         best_rosetta_score = scores["dG_separated"]
 
         # Calculate SCII
@@ -268,7 +274,6 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         logging.debug(
             f"Scoring {peptide} (score {shared_dict[peptide]['total']}) took {(time.time() - start) / 60:.1f} minutes!")
         return shared_dict[peptide]["total"]
-
 
     def run(self):
         for i in range(self.config["num_generations"]):
