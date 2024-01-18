@@ -5,6 +5,7 @@ from typing import List
 
 if typing.TYPE_CHECKING:
     import modules.stages.PeptideGenerator
+    import modules.stages.optimize.GAStrategy
 
 
 def greedy_expand_node_inclusion(config: modules.stages.PeptideGenerator._SelectionStrategies.GreedyExpand,
@@ -28,3 +29,8 @@ class CustomSelectionStrategy(modules.stages.PeptideGenerator._SelectionStrategi
     def reduce(self, from_chain: str, to_chain: str, nodes: List[modules.stages.PeptideGenerator.REBprocessor.Node]) -> \
             List[modules.stages.PeptideGenerator.REBprocessor.Node]:
         return NotImplemented
+
+
+def addin(ga: modules.stages.optimize.GAStrategy.GAStrategy,
+          population: modules.stages.optimize.GAStrategy.Population) -> List:
+    return NotImplemented

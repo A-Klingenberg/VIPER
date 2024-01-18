@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import itertools
 import logging
-import math
 import multiprocessing
 import os
 import pprint
@@ -11,7 +10,7 @@ import random
 import shutil
 import time
 from pathlib import Path
-from typing import List, Callable, Union, Tuple
+from typing import List, Callable, Union, Tuple, Any
 
 import ConfigManager
 from modules.wrappers import RosettaWrapper
@@ -23,27 +22,53 @@ from . import OptimizationStrategy
 cm = ConfigManager.ConfigManager.get_instance
 
 
-# Genetic Algorithm Optimization Strategy
-
 class Population:
+    """
+    A population hold multiple individuals. Individuals within a population are meant to compete against each other and
+    possibly reproduce with other individuals within this population during regular generations of the genetic algorithm
+
+    This implementation of a population assumes that the individual('s genome) can be represented as a str!
+    """
     individuals: List[str] = []
     score_func: Callable = None
+    score_repo: dict = None
 
-    def __init__(self, score_func: Callable, individuals: List[str] = None):
+    def __init__(self, individuals: List, score_func: Callable = None, scores: dict = None):
+        self.individuals = individuals
         self.score_func = score_func
-        if individuals is not None:
-            self.individuals = individuals
+        self.score_repo = scores
 
-    # TODO: Probably better to remove these two alltogether
-    def get_desc(self, scores=None) -> List:
-        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=scores, verbosity=cm().get(
-            "verbose")) if self.score_func is not None else None, reverse=True)
+    def get_desc(self, scores: dict = None) -> List:
+        """
+        Gets the individuals in descending order of their scores.
+
+        :param scores: (Optional) A dict of scores to use. If this is not None, every individual MUST have a numerical
+            entry in the scores dictionary!
+        :return: The ordered list of individuals, from high scores to low scores.
+        """
+        use_scores = scores if scores else self.score_repo
+        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=use_scores, verbosity=cm().get(
+            "verbose"))["total"] if self.score_func is not None else None, reverse=True)
 
     def get_asc(self, scores=None) -> List:
-        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=scores, verbosity=cm().get(
-            "verbose")) if self.score_func is not None else None, reverse=False)
+        """
+        Gets the individuals in ascending order of their scores.
+
+        :param scores: (Optional) A dict of scores to use. If this is not None, every individual MUST have a numerical
+            entry in the scores dictionary!
+        :return: The ordered list of individuals, from low scores to high scores.
+        """
+        use_scores = scores if scores else self.score_repo
+        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=use_scores, verbosity=cm().get(
+            "verbose"))["total"] if self.score_func is not None else None, reverse=False)
 
     def update(self, individuals: List) -> Population:
+        """
+        Replaces the individuals of this population.
+
+        :param individuals: A new list of individuals to replace the current population with.
+        :return: The population itself
+        """
         self.individuals = individuals
         return self
 
@@ -60,7 +85,12 @@ class Population:
         return (_ for _ in self.individuals)
 
     def __str__(self):
-        return f"[{', '.join(self.individuals)}"[:-2] + "]"
+        """
+        The representation of the population is a list of the str representation of its individuals
+
+        :return: A str representation of the population
+        """
+        return f"[{', '.join(self.individuals)}" + "]"
 
     def __repr__(self):
         return self.__str__()
@@ -75,6 +105,10 @@ class Population:
 
 
 class GAStrategy(OptimizationStrategy.OptimizationStrategy):
+    """
+    This class manages runs of a genetic algorithm optimization strategy.
+    Has support for multiple concurrent populations.
+    """
     populations: List[Population] = None
     _score_func: Callable = None
     _select: Callable = None
@@ -87,11 +121,27 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     out_path: Path = None
     ref: Union[Path, str] = None
     vsp: Union[Path, str] = None
+    _cust_addin_mutate: bool = False
 
     def __init__(self, ref_pdb: Union[Path, str], populations: List[Population], score_func: Callable = None,
                  select: Callable = None,
                  crossover: Callable = None, mutate: Callable = None, config: dict = None,
                  propagate_score_func: bool = True, metric: str = "MIN"):
+        """
+        Initializes the genetic algorithm strategy with the passed parameters.
+
+        :param ref_pdb: A path to the reference pdb for which to optimize the peptide.
+        :param populations: A list of populations to optimize. If you only want to use a single Population, you still
+            have to wrap it in a list! ( [...] )
+        :param score_func: (Optional) The score function to use on the individual. If not supplied, uses the builtin
+        :param select: (Optional) The function to select parents. If not supplied, uses the builtin
+        :param crossover: (Optional) The function to apply the crossover operation. If not supplied, uses the builtin
+        :param mutate: (Optional) The function to apply the mutation operation. If not supplied, uses the builtin
+        :param config: (Optional) Any settings / parameters of the genetic algorithm you want to change from the default
+        :param propagate_score_func: Whether to propagate the score function supplied here to the populations
+            (default: True)
+        :param metric: Whether a smaller ("MIN") or larger ("MAX") score is better (default: "MIN")
+        """
         super().__init__()
         self.ref = ref_pdb
         self._score_func = score_func if score_func is not None else self.score
@@ -124,23 +174,22 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         os.makedirs(self.out_path, exist_ok=True)
         self.vsp = PDBtool.remove_chain(self.ref, [cm().get("partner_chain")],
                                         os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
+        self._cust_addin_mutate = cm().get("optimize.ga.custom_addin_mutate")
 
-    def select(self, population: Population, n: int = None):
+    def select(self, population: Population, n: int = None) -> List:
+        """
+        Implements the selection operator. Chooses parents from the passed population and returns them in a list.
+
+        :param population: The population to select parents for.
+        :param n: (Optional) How many parents to select. If this is not specified, it derives the number from the config
+        :return: A list of parent individuals
+        """
         take_num = round(self.config["select_percent"] * len(population)) if n is None else n
         if take_num == 0:
             take_num = 1
-        # Get scores for population
-        # Scoring may be very time intensive, so do this concurrently
-        with multiprocessing.Manager() as manager:
-            shared_dict = manager.dict()
-            shared_dict.update(self.score_repo)
-            with multiprocessing.Pool() as pool:
-                pool.starmap(self._score_func,
-                             [(individual, shared_dict, self.out_path, cm().get("verbose")) for individual in
-                              population])
-            self.score_repo.update(shared_dict)
-        # We can now be sure that we have scores for every individual in this population
-        lookup = {individual: self.score_repo[individual]["total"] for individual in population}
+        # restrict view to current population
+        lookup = {individual: self.score_repo.get(individual, self._score_func(individual))["total"] for individual in
+                  population}
         if self.config["selection_mode"] == "UNIFORM":
             return random.choices(list(lookup.keys()), k=take_num)
         # Order by fitness
@@ -162,6 +211,14 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             return [ind for ind, _ in ordered]
 
     def crossover(self, parent1, parent2):
+        """
+        Apply the crossover operation to the two parents and returns the new individual. Assumes the genome is a str of
+        amino acids in single letter notation.
+
+        :param parent1: The first parent
+        :param parent2: The second parent
+        :return: A new individual based on the parents
+        """
         parent1, parent2 = (parent1, parent2) if len(parent1) < len(parent2) else (parent2, parent1)
         combined = itertools.zip_longest(parent1, parent2, fillvalue=None)
         offspring = []
@@ -185,6 +242,14 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         return offspring
 
     def mutate(self, individual):
+        """
+        Applies the mutation operator. Can be biased in its choice of mutation based on BLOSUM matrices. Assumes the
+        genome is a string amino acids in single letter notation. Potentially returns the same individual, if the
+        mutation rate is fairly low.
+
+        :param individual: The individual to mutate
+        :return: The (possibly) mutated individual.
+        """
         _ = list(copy.deepcopy(individual))
         for n, gene in enumerate(individual):
             if random.random() < self.config["mutation_rate"]:
@@ -196,7 +261,16 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         return "".join(_)
 
     def _getstruc(self, peptide: str) -> Tuple[Path, Path]:
+        """
+        Helper function that takes in a peptide as a str of amino acids in single letter notation and returns a path to
+        a PDB of the complex of VSP + superimposed peptide and a path to a PDB of the predicted tertiary structure of
+        the PDB.
+
+        :param peptide: The peptide as a str of amino acids in single letter notation
+        :return: A tuple of (Path to PDB of VSP+superimposed peptide complex, Path to PDB of peptide tertiary structure)
+        """
         if backoff := self.config["getstruc_backoff"]:
+            # Wait a bit to stagger requests to webservice
             time.sleep(random.randrange(0, backoff))
         pdb = PEPstrMODWrapper.submit_peptide(sequence=str(peptide))
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
@@ -209,7 +283,21 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                       out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
         return PDBtool.join(peptide_pdb, self.vsp), peptide_pdb
 
-    def score(self, peptide: str, shared_dict=None, base_log_path: Union[Path, str] = None, verbosity=None) -> float:
+    def score(self, peptide: str, shared_dict=None, base_log_path: Union[Path, str] = None,
+              verbosity: bool = False) -> dict:
+        """
+        Scores a peptide and updates the shared_dict (or self.score_repo if not specified). Logs to a separate file
+        in the base_log_path given the verbosity. Returns a dict of the scores, with the value under "total" being the
+        aggregate score.
+
+        :param peptide: The peptide as a str of amino acids in single letter notation
+        :param shared_dict: (Optional) The dictionary to update with the scores. If not specified,
+            defaults to self.score_repo
+        :param base_log_path: The base log path to put the log file under. Will be written to "score_log.txt" in the
+            subfolder "gen{self.generation}_{peptide}"
+        :param verbosity: Whether to enable verbose logging. (default: False)
+        :return:
+        """
         if shared_dict is None:
             shared_dict = self.score_repo
         if base_log_path is None:
@@ -273,15 +361,33 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                 "SCII": scii, "calc_scii_bonus": bonus}
         logging.debug(
             f"Scoring {peptide} (score {shared_dict[peptide]['total']}) took {(time.time() - start) / 60:.1f} minutes!")
-        return shared_dict[peptide]["total"]
+        return shared_dict[peptide]
 
-    def run(self):
+    def run(self) -> Tuple[Any, float]:
+        """
+        Runs the genetic algorithm for optimizing the peptide. Returns a tuple of the best individual as a str of amino
+         acids in single letter noration and the associated aggregate score.
+
+        :return: A tuple of (best individual, aggregate score)
+        """
         for i in range(self.config["num_generations"]):
             logging.info(f"Genetic Algorithm, generation {self.generation}")
             pop_count = 0
             for pop in self.populations:
                 logging.info(f"Old pop [#{pop_count}] : {pprint.pformat(pop)}")
                 old_num = len(pop)
+                # Get scores for population
+                # Scoring may be very time intensive, so do this concurrently
+                # for every individual within this population
+                with multiprocessing.Manager() as manager:
+                    shared_dict = manager.dict()
+                    shared_dict.update(self.score_repo)
+                    with multiprocessing.Pool() as pool:
+                        pool.starmap(self._score_func,
+                                     [(individual, shared_dict, self.out_path, cm().get("verbose")) for individual in
+                                      pop])
+                    self.score_repo.update(shared_dict)
+                    # We can now be sure that we have scores for every individual in this population
                 families = []
                 parents = self._select(pop)
                 # Since we need to pair up parents, check for even number of parents. If the number of parents is odd,
@@ -309,9 +415,15 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 logging.info(
                     f"Generation {self.generation}, best candidate: {curr_best[0]} ({curr_best[1]})")
                 pop.update(finalists)
+                if self._cust_addin_mutate:
+                    import custom_funcs
+                    add_to = custom_funcs.addin(self, pop)
+                    for individual in add_to:
+                        pop.individuals.append(individual)
                 logging.info(f"New pop [#{pop_count}] : {pop}")
                 pop_count += 1
             self.generation += 1
         best = min(self.score_repo.items(), key=lambda item: item[1]["total"])
         logging.info(f"Best found candidate is {best[0]} with score {best[1]['total']}.")
         logging.debug(f"Dumping score repo: {pprint.pformat(self.score_repo)}")
+        return best[0], best[1]["total"]
