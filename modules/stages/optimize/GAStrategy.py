@@ -34,11 +34,12 @@ class Population:
         if individuals is not None:
             self.individuals = individuals
 
+    # TODO: Probably better to remove these two alltogether
     def get_desc(self) -> List:
-        return sorted(self.individuals, key=self.score_func if self.score_func is not None else None, reverse=True)
+        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=scores, verbosity=cm().get("verbose")) if self.score_func is not None else None, reverse=True)
 
-    def get_asc(self) -> List:
-        return sorted(self.individuals, key=self.score_func if self.score_func is not None else None, reverse=False)
+    def get_asc(self, scores = None) -> List:
+        return sorted(self.individuals, key=lambda i: self.score_func(i, shared_dict=scores, verbosity=cm().get("verbose")) if self.score_func is not None else None, reverse=False)
 
     def update(self, individuals: List) -> Population:
         self.individuals = individuals
@@ -117,16 +118,22 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         if propagate_score_func:
             for pop in self.populations:
                 pop.score_func = self._score_func
-        os.makedirs(os.path.join(cm().get("results_path"), "GA"), exist_ok=True)
+        os.makedirs(self.out_path, exist_ok=True)
         self.vsp = PDBtool.remove_chain(self.ref, [cm().get("partner_chain")],
                                        os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
 
     def select(self, population: Population, n: int = None):
-        take_num = math.ceil(self.config["select_percent"] * len(population)) if n is None else n
+        take_num = round(self.config["select_percent"] * len(population)) if n is None else n
+        if take_num == 0:
+            take_num = 1
         # Get scores for population
         # Scoring may be very time intensive, so do this concurrently
-        with multiprocessing.Pool() as pool:
-            pool.map(self._score_func, population)
+        with multiprocessing.Manager() as manager:
+            shared_dict = manager.dict()
+            shared_dict.update(self.score_repo)
+            with multiprocessing.Pool() as pool:
+                pool.starmap(self._score_func, [(individual, shared_dict, self.out_path, cm().get("verbose")) for individual in population])
+            self.score_repo.update(shared_dict)
         # We can now be sure that we have scores for every individual in this population
         lookup = {individual: self.score_repo[individual]["total"] for individual in population}
         if self.config["selection_mode"] == "UNIFORM":
@@ -186,7 +193,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     def _getstruc(self, peptide: str) -> Tuple[Path, Path]:
         if backoff := self.config["getstruc_backoff"]:
             time.sleep(random.randrange(0, backoff))
-        pdb = PEPstrMODWrapper.submit_peptide(sequence=peptide)
+        pdb = PEPstrMODWrapper.submit_peptide(sequence=str(peptide))
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
         pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
 
@@ -197,9 +204,25 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                       out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
         return PDBtool.join(peptide_pdb, self.vsp), peptide_pdb
 
-    def score(self, peptide: str) -> float:
-        if peptide in self.score_repo:
-            return self.score_repo[peptide]["total"]
+    def score(self, peptide: str, shared_dict = None, base_log_path: Union[Path, str] = None, verbosity = None) -> float:
+        if shared_dict is None:
+            shared_dict = self.score_repo
+        if base_log_path is None:
+            base_log_path = self.out_path
+        if peptide in shared_dict:
+            return shared_dict[peptide]["total"]
+        # Because we are very likely running this in a separate process, it more robust/easier to log to separate log files
+        os.makedirs(os.path.normpath(os.path.join(base_log_path, f"gen{self.generation}_{peptide}")), exist_ok=True)
+        if verbosity:
+            logging.basicConfig(level=logging.DEBUG,
+                                filename=os.path.normpath(os.path.join(base_log_path, f"gen{self.generation}_{peptide}", "score_log.txt")),
+                                format="%(asctime)s [%(levelname)s] (%(filename)s:%(module)s): %(message)s",
+                                force=True)
+        else:
+            logging.basicConfig(level=logging.INFO,
+                                filename=os.path.normpath(os.path.join(base_log_path, f"gen{self.generation}_{peptide}", "score_log.txt")),
+                                format="%(asctime)s [%(levelname)s] (%(filename)s:%(module)s): %(message)s",
+                                force=True)
         start = time.time()
 
         # Get 3D structure
@@ -240,17 +263,19 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         # more stable peptides and smaller values indicating less stable peptides
         # Therefore a percentage based bonus or malus will be applied if the value is higher or lower thant 0.3 - 0.4
         bonus = round((scii - 0.35), 1) * 0.5 + 1
-        self.score_repo[peptide] = {"total": best_rosetta_score * bonus, "rosetta_score": best_rosetta_score,
-                                    "SCII": scii, "calc_scii_bonus": bonus}
-        logging.debug(f"Scoring {peptide} took {(time.time() - start) / 60:.1f} minutes!")
-        return self.score_repo[peptide]["total"]
+        shared_dict[peptide] = {"total": best_rosetta_score * bonus, "rosetta_score": best_rosetta_score,
+                                "SCII": scii, "calc_scii_bonus": bonus}
+        logging.debug(
+            f"Scoring {peptide} (score {shared_dict[peptide]['total']}) took {(time.time() - start) / 60:.1f} minutes!")
+        return shared_dict[peptide]["total"]
+
 
     def run(self):
         for i in range(self.config["num_generations"]):
-            logging.debug(f"Genetic Algorithm, generation {self.generation}")
+            logging.info(f"Genetic Algorithm, generation {self.generation}")
             pop_count = 0
             for pop in self.populations:
-                logging.debug(f"Old pop [#{pop_count}] : {pprint.pformat(pop)}")
+                logging.info(f"Old pop [#{pop_count}] : {pprint.pformat(pop)}")
                 old_num = len(pop)
                 families = []
                 parents = self._select(pop)
@@ -275,13 +300,13 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                         finalists.append(candidate)
                 for p in parents:
                     finalists.append(p)
-                pop.update(finalists)
-                logging.debug(f"New pop [#{pop_count}] : {pop}")
-                curr_best = pop.get_asc()[0]
+                curr_best = min({i: self.score_repo[i]['total'] for i in pop}.items(), key=lambda t: t[1])
                 logging.info(
-                    f"Generation {self.generation}, best candidate: {curr_best} ({self.score_repo[curr_best]['total']})")
+                    f"Generation {self.generation}, best candidate: {curr_best[0]} ({curr_best[1]})")
+                pop.update(finalists)
+                logging.info(f"New pop [#{pop_count}] : {pop}")
                 pop_count += 1
             self.generation += 1
         best = min(self.score_repo.items(), key=lambda item: item[1]["total"])
         logging.info(f"Best found candidate is {best[0]} with score {best[1]['total']}.")
-        logging.debug(pprint.pformat(self.score_repo))
+        logging.debug(f"Dumping score repo: {pprint.pformat(self.score_repo)}")
