@@ -205,7 +205,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         if self.config["selection_mode"] == "BESTONLY":
             return [ind for ind, _ in ordered[:take_num]]
         if self.config["selection_mode"] == "ROULETTEWHEEL":
-            return random.choices([ind for ind, _ in ordered], weights=[fit for _, fit in ordered], k=take_num)
+            return random.choices([ind for ind, _ in ordered], weights=[abs(fit) for _, fit in ordered], k=take_num)
         else:
             # Return whole population
             return [ind for ind, _ in ordered]
