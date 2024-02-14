@@ -373,6 +373,11 @@ class REBprocessor:
         :param breakdown_file: Path to breakdown file to be read
         :return: A list of Node objects with averaged interaction energies
         """
+        try:
+            breakdown_file = Path(breakdown_file).resolve(strict=True)
+        except (FileNotFoundError, RuntimeError) as e:
+            logging.error(f"Couldn't resolve a path you provided. Stacktrace: {e}")
+            raise e
         return REBprocessor.get_avg_nodes(REBprocessor.read_in(breakdown_file))
 
     @staticmethod
@@ -381,9 +386,10 @@ class REBprocessor:
         Parses the output from a residue energy breakdown run and prepares it for further analysis.
         Can read in breakdown from file with multiple poses, returns them as a dict in the form of:
         {pose_id: [nodes...], ...}
+        This assumes that every pose in the file is of the same molecule(s)!
 
-        :param breakdown_file:
-        :return:
+        :param breakdown_file: A Rosetta Energy Breakdown score file
+        :return: A dictionary of total Rosetta energies per residue per pose
         """
         logging.info(f"Reading in residue energy breakdown file {breakdown_file}...")
         formatted = ""
@@ -441,7 +447,8 @@ class REBprocessor:
     @staticmethod
     def get_avg_nodes(poses: collections.OrderedDict[List[Node]]) -> List[Node]:
         """
-        Averages interaction energies for all residues in each pose
+        Averages interaction energies for all residues in each pose and returns aggregated energies for each residue.
+
         :param poses: The output from the read_in() - A OrderedDict of {pose: List[Node], ...}
         :return: A list of nodes with averaged interaction energies
         """
@@ -497,8 +504,8 @@ class REBprocessor:
                 A - B - C - D - E - F - G - H - J
                 ---- increasing residue id ---->
 
-            Calling this method on Node E with length 2 and direction 0_old would give: [C, D, E, F, G].
-            Calling this method on Node E with length 2 and direction < 0_old would give: [C, D, E]
+            Calling this method on Node E with length 2 and direction 0 would give: [C, D, E, F, G].
+            Calling this method on Node E with length 2 and direction < 0 would give: [C, D, E]
 
             :param n: The start node from which to gather the relative neighbors
             :param length: How many neighbors (inclusive) to get. I.e. "2" would give n + two neighbors
