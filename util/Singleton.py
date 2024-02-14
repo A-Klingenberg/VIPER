@@ -4,15 +4,15 @@ class _Singleton(type):
     def __call__(cls, *args, **kwargs):
         """
         Return an instance of this class if it already exists, else construct one given the arguments. Also construct a
-        new one when the kwarg 'force' is given.
+        new one when the kwarg 'force_refresh_singleton' is given.
 
-        !!! Therefore, you cannot use the kwarg 'force' as part of the constructor of a subclass of this !!!
+        !!! Therefore, you cannot use the kwarg 'force_refresh_singleton' as part of the constructor of a subclass of this !!!
 
         :param args: Constructor args to pass along
         :param kwargs: Constructor kwargs to pass along
         :return: An instance of this class
         """
-        force = kwargs.pop("force", False)
+        force = kwargs.pop("force_refresh_singleton", False)
         if cls not in cls._instances or force:
             cls._instances[cls] = super(_Singleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
