@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     # noinspection PyArgumentList
-    ConfigManager(force=True, args=args, base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
+    ConfigManager(force_refresh_singleton=True, args=args, base_path=os.path.abspath(os.path.dirname(os.path.realpath(__file__))))
     v = VIPER(ConfigManager.get_instance().get("PDB"))
     v.run()
 
