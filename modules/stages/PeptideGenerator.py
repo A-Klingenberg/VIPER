@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import pprint
 import sys
 from abc import abstractmethod, ABCMeta
-from typing import List, final, Type
+from dataclasses import dataclass, asdict
+from math import sqrt
+from typing import List, final, Type, Tuple
 
 import ConfigManager
 from modules.wrappers.RosettaWrapper import REBprocessor
@@ -28,48 +31,88 @@ class _SelectionStrategies:
 
     @staticmethod
     def add_linkers(nlist: List[REBprocessor.Node], respect_length_limit: bool = False) -> List[REBprocessor.Node]:
+        """
+        Adds linker nodes to every gap in consecutive residue ids in a node list and potentially also updates residue
+        numbering, if necessary.
+
+        :param nlist: The node list (candidate peptide) to add linkers to
+        :param respect_length_limit: (Optional) Whether to raise an error if adding linkers would make the peptide
+            length exceed the limit. (Default: False)
+        :return: The original node list, but with linker nodes added and potentially updated numbering
+        """
         linker = cm().get("peptide_generator.linker")
         if linker is None:
-            linker = "GG"  # default is polyglycine
+            linker = "GG"  # default is polyglycine (2)
         first = True
-        new_list = []
-        for node in nlist:
+        new_nlist = []
+        increase_num = 0
+        for n, node in enumerate(nlist):
             if first:
-                new_list.append(REBprocessor.Node(amino_acid=node.amino_acid,
-                                                  residue_id=node.residue_id,
-                                                  chain=node.chain,
-                                                  orig_res_id=node.orig_res_id))
+                new_nlist.append(REBprocessor.Node(amino_acid=node.amino_acid,
+                                                   residue_id=node.residue_id,
+                                                   chain=node.chain,
+                                                   orig_res_id=node.orig_res_id))
                 first = False
                 continue
-            if abs(node.residue_id - new_list[-1].residue_id) > 1:  # Jump in the sequence, need linker
-                base_id = new_list[-1].residue_id
-                if respect_length_limit and len(new_list) + len(linker) >= cm().get("peptide_generator.max_length"):
-                    raise IndexError("Cannot insert")
-                for element in linker:  # Add linkers
-                    base_id += 1
+            interres = abs(node.residue_id - new_nlist[-1].residue_id)
+            if interres > 1:  # Jump in the sequence, need linker
+                # subtract gap length from the offset we have to add to the following residue ids, since the following
+                # ids are already increased by the gap length
+                increase_num -= max(0, interres - 1)
+                # Number of elements to use from linker (usually it's all of them)
+                use_num = len(linker)
+                if interres - 1 < len(linker):
+                    logging.warning(f"Trying to link a gap between fragments that is shorter than the linker! "
+                                    f"Using policy {cm().get('peptide_generator.linker_oversize_policy').upper()}.")
+                    policy = cm().get('peptide_generator.linker_oversize_policy').upper()
+                    if policy == "TRUNCATE":
+                        use_num = interres - 1
+                    elif policy == "IGNORE":
+                        pass
+                    else:  # Default case: TRUNCATE
+                        use_num = interres - 1
+                base_id = new_nlist[-1].residue_id
+
+                # Check that length of current candidate w/ linkers + linker + remaining peptide doesn't exceed length
+                # (Doesn't check for future linkers, but they will be considered, once they are encountered)
+                if respect_length_limit and len(new_nlist) + len(linker) + len(nlist[n:]) >= cm().get(
+                        "peptide_generator.max_length"):
+                    raise IndexError("Cannot insert linker, because it would make the peptide length exceed the limit.")
+
+                for lnum, element in enumerate(linker):  # Add linkers
+                    if lnum == use_num:  # stop early, because of truncate limit
+                        break
+                    increase_num += 1
+                    linker_id = base_id + increase_num
                     linker_node = REBprocessor.Node(amino_acid=PDBtool.one_to_three(element),
-                                                    residue_id=base_id,
-                                                    chain=new_list[-1].chain,
-                                                    neighbor_prev=new_list[-1])
-                    new_list[-1].neighbor_next = linker_node
-                    new_list.append(linker_node)
-                new_list[-1].neighbor_next = node
-                node.neighbor_prev = new_list[-1]
-                new_list.append(node)
+                                                    residue_id=linker_id,
+                                                    chain=new_nlist[-1].chain,
+                                                    neighbor_prev=new_nlist[-1])
+                    # Update previous node to point to linker
+                    new_nlist[-1].neighbor_next = linker_node
+                    # Add linker to list
+                    new_nlist.append(linker_node)
+
+                new_nlist[-1].neighbor_next = node
+                node.neighbor_prev = new_nlist[-1]
+                new_nlist.append(node)
             else:
+                # Copy over original nore with (potentially) adjusted residue id
                 add_node = REBprocessor.Node(amino_acid=node.amino_acid,
-                                             residue_id=node.residue_id,
+                                             residue_id=node.residue_id + increase_num,
                                              chain=node.chain,
-                                             neighbor_prev=new_list[-1],
+                                             partners=node.partners,
+                                             strength=node.strength,
+                                             neighbor_prev=new_nlist[-1],
                                              orig_res_id=node.orig_res_id)
-                new_list[-1].neighbor_next = add_node
-                new_list.append(add_node)
-        return new_list
+                new_nlist[-1].neighbor_next = add_node
+                new_nlist.append(add_node)
+        return new_nlist
 
     class SelectionStrategy(metaclass=ABCMeta):
         """
-        Defines behavior a selection strategy needs to implement. Namely, given a list of nodes, generate a peptide
-        candidate.
+        Defines behavior a selection strategy needs to implement. Namely, given a list of nodes, select a subset as a
+        peptide candidate.
         """
 
         def __init__(self):
@@ -268,12 +311,36 @@ class _SelectionStrategies:
                                 f"a {(self.min_rel_increase - 1) * 100}% increase?")
             self.lookahead = cm().get("peptide_generator.fragment_joiner.lookahead")
             self.length_flexibility = cm().get("peptide_generator.fragment_joiner.length_flexibility")
+            self.join_distance_penalty = cm().get("peptide_generator.fragment_joiner.join_distance_penalty")
+            self.join_penalty_factor = cm().get("peptide_generator.fragment_joiner.join_penalty_factor", 0.05)
             self.fully_join_fragments = cm().get("peptide_generator.fragment_joiner.fully_join_fragments")
             self.penalize_lone_residues = cm().get("peptide_generator.fragment_joiner.penalize_lone_residues")
             self.lone_residue_penalty = cm().get("peptide_generator.fragment_joiner.lone_residue_penalty")
             self.pad_lone_residues = cm().get("peptide_generator.fragment_joiner.pad_lone_residues")
             self.lone_residue_pad_range = cm().get("peptide_generator.fragment_joiner.lone_residue_pad_range")
+            self.old_frag_combiner = cm().get("peptide_generator.fragment_joiner.old_frag_combiner")
+            self.linker_stretch_factor = cm().get("peptide_generator.fragment_joiner.linker_stretch_factor", 4.0)
             self.custom_func = cm().get("peptide_generator.fragment_joiner.custom_func")
+            self.ref_relax = cm().get("ref_relax")
+
+        @final
+        @dataclass
+        class _Fragment:
+            n_ter_resid: int
+            n_ter_cacoords: Tuple[float, float, float]
+            c_ter_resid: int
+            c_ter_cacoords: Tuple[float, float, float]
+            nlist: List[REBprocessor.Node]
+            score: float
+
+            def __repr__(self):
+                return json.dumps(asdict(self))
+
+            def __str__(self):
+                return self.__repr__()
+
+            def __len__(self):
+                return len(self.nlist)
 
         def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
             if len(nodes) == 0:
@@ -281,6 +348,11 @@ class _SelectionStrategies:
             if not from_chain == nodes[0].chain:
                 raise ValueError(
                     "Chains have not been properly defined, list of nodes does not correspond to from_chain.")
+            if self.ref_relax is None:
+                if _ := cm().get("ref_relax"):
+                    self.ref_relax = _
+                else:
+                    raise ValueError("Can't use FragmentJoiner strategy without the reference relaxed PDB!")
 
             def _include(n: REBprocessor.Node, to_chain: str, curr_strength: float, add_to_strength: float = 0,
                          curr_length: int = 0, ignore_cutoff: bool = False) -> bool:
@@ -332,6 +404,9 @@ class _SelectionStrategies:
                         break
                     if residue_index + i >= len(nodes):  # Don't lookahead past end of list
                         break
+                    if len(curr_fragment) == 0 and i == 0 and nodes[residue_index + i].strength.get(to_chain, 1) >= 0:
+                        # Don't do lookahead if we are already starting from a node that doesn't interact with to_chain
+                        break
                     # Do we add the current residue to our fragment?
                     if _include(nodes[residue_index + i], to_chain=to_chain, curr_strength=fragment_strength,
                                 add_to_strength=lookahead_strength_buf,
@@ -341,7 +416,7 @@ class _SelectionStrategies:
                             curr_fragment.append(r)
                             fragment_strength += r.strength.get(to_chain, 0)
                         curr_fragment.append(nodes[residue_index + i])
-                        fragment_strength += nodes[residue_index].strength.get(to_chain, 0)
+                        fragment_strength += nodes[residue_index + i].strength.get(to_chain, 0)
                         break
                     else:  # Temporarily store current residue and look ahead
                         lookahead_strength_buf += nodes[residue_index + i].strength.get(to_chain, 0)
@@ -369,34 +444,179 @@ class _SelectionStrategies:
                         curr_fragment = []
                         fragment_strength = -0.00000001
 
-            # TODO: Add penalty based on range (closest atoms) of fragment to strongest fragment
+            # FIXME: Alignment seems spurious, doesn't actually align any subseq of pep with its original position??
 
-            # TODO: Improve upon simple, greedy strategy?
-            #  Knapsack problem, how to fit fragments with strength and length into max_length?
-            #  If close to max, consider only adding subsequence of fragment? How to select?
+            # fragments have format:
+            # {
+            #   '1A': (
+            #       [1A, 2A, 3A, 4A, ...],
+            #       -0.85637828377...
+            #   ),
+            #   '19A': (
+            #       [19A, 20A],
+            #       -2.55555555...
+            #   ),
+            #   ...
+            # }
+
             final_peptide = []
 
-            def _get_strength(entry: tuple) -> float:
-                return entry[1][1]
+            if not self.old_frag_combiner:
+                # Get coords of fragment N and C termini
+                fraglist = []
+                for _, fragment in fragments.items():
+                    # PDB is N -> C
+                    fraglist.append(self._Fragment(
+                        n_ter_resid=fragment[0][0].residue_id,
+                        n_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, fragment[0][0]),
+                        c_ter_resid=fragment[0][-1].residue_id,
+                        c_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, fragment[0][-1]),
+                        nlist=fragment[0],
+                        score=fragment[1]
+                    ))
 
-            temp = sorted(fragments.items(), key=_get_strength, reverse=False)
+                # get potential combinations
+                def euclidean(coords1: Tuple[float, float, float], coords2: Tuple[float, float, float]) -> float:
+                    return sqrt((coords1[0] - coords2[0]) ** 2 +
+                                (coords1[1] - coords2[1]) ** 2 +
+                                (coords1[2] - coords2[2]) ** 2)
 
-            for k, fragment in temp:
-                stop = False
-                if len(final_peptide) + len(fragment[0]) + self.length_flexibility >= self.max_length:
-                    continue
-                for residue in fragment[0]:
-                    if not self.fully_join_fragments and len(
-                            final_peptide) >= self.max_length + self.length_flexibility:
-                        stop = True
-                        break
+                allowdist = len(self.linker) * self.linker_stretch_factor
+
+                def grow(fragment_list: List, curr_combination: List, combination_list: List):
+                    # Get best possible n terminus extension of current fragment combination
+                    n_partners = [f for f in fragment_list if f not in curr_combination and f != curr_combination[0]
+                                  and euclidean(curr_combination[0].n_ter_cacoords, f.c_ter_cacoords) <= allowdist]
+                    best_score = 10000000
+                    best_n_frag = None
+                    for _ in n_partners:
+                        if _.score < best_score:
+                            best_score = _.score
+                            best_n_frag = _
+
+                    # Get best possible c terminus extension of current fragment combination
+                    c_partners = [f for f in fragment_list if f not in curr_combination and f != curr_combination[-1]
+                                  and euclidean(curr_combination[-1].c_ter_cacoords, f.n_ter_cacoords) <= allowdist]
+                    best_score = 10000000
+                    best_c_frag = None
+                    for _ in c_partners:
+                        if _.score < best_score:
+                            best_score = _.score
+                            best_c_frag = _
+
+                    # Identify whether to extend on N- or C-terminus side
+                    if best_n_frag is not None and best_c_frag is not None:
+                        use_frag = best_n_frag if best_n_frag.score < best_c_frag.score else best_c_frag
+                    elif best_n_frag is None and best_c_frag is not None:
+                        use_frag = best_c_frag
+                    elif best_n_frag is not None and best_c_frag is None:
+                        use_frag = best_n_frag
                     else:
-                        final_peptide.append(residue)
-                if stop:
-                    break
+                        logging.debug("Didn't find any eligible fragments to extend current fragment combination.")
+                        combination_list.append(curr_combination)
+                        return
 
-            logging.debug(f"Peptide fragments are: {pprint.pformat(temp)}")
+                    # Do we extend into the N-terminus region?
+                    if use_frag.n_ter_resid < curr_combination[0].n_ter_resid:
+                        # Would adding the current fragment exceed the maximum length?
+                        if sum([len(_) for _ in curr_combination]) + len(use_frag) >= self.max_length:
+                            # Yes, only use subset of residues until length limit is hit
+                            use_num = self.max_length - sum([len(_) for _ in curr_combination])
+                            subset = use_frag.nlist[-1 * use_num:]
+                            use_frag = self._Fragment(
+                                n_ter_resid=subset[0].residue_id,
+                                n_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[0]),
+                                c_ter_resid=subset[-1],
+                                c_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[-1]),
+                                nlist=subset,
+                                score=sum([_.strength.get(to_chain, 0) for _ in subset])
+                            )
+                            curr_combination = [use_frag] + curr_combination
+                            combination_list.append(curr_combination)
+                            return
+                        # There is still room to grow the current combination of fragments
+                        curr_combination = [use_frag] + curr_combination
+                        grow(fragment_list, curr_combination, combination_list)
+                    else:
+                        # Would adding the current fragment exceed the maximum length?
+                        if sum([len(_) for _ in curr_combination]) + len(use_frag) >= self.max_length:
+                            # Yes, only use subset of residues until length limit is hit
+                            use_num = self.max_length - sum([len(_) for _ in curr_combination])
+                            subset = use_frag.nlist[:use_num]
+                            use_frag = self._Fragment(
+                                n_ter_resid=subset[0].residue_id,
+                                n_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[0]),
+                                c_ter_resid=subset[-1],
+                                c_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[-1]),
+                                nlist=subset,
+                                score=sum([_.strength.get(to_chain, 0) for _ in subset])
+                            )
+                            curr_combination.append(use_frag)
+                            combination_list.append(curr_combination)
+                            return
+                        # There is still room to grow the current combination of fragments
+                        curr_combination.append(use_frag)
+                        grow(fragment_list, curr_combination, combination_list)
 
+                # get feasible combinations of fragments
+                buf = []
+                for frag in fraglist:
+                    grow(fragment_list=fraglist, curr_combination=[frag], combination_list=buf)
+                if len(buf) == 0:
+                    logging.error("Couldn't identify any fragment combinations! This is very likely an internal error, "
+                                  "please create an issue on the VIPER GitHub.")
+                    raise ValueError(
+                        "Couldn't identify any fragment combinations! This is very likely an internal error, "
+                        "please create an issue on the VIPER GitHub.")
+                use_combination = buf[0]
+                for comb in buf[1:]:
+                    if sum([_.score for _ in comb]) < sum(_.score for _ in use_combination):
+                        use_combination = comb
+                final_peptide = []
+                for frag in use_combination:
+                    final_peptide += frag.nlist
+
+            else:
+                fragdict = sorted(fragments.items(), key=lambda _: _[1][1], reverse=False)
+                # Apply inter-fragment distance penalty, if set
+                if dist := self.join_distance_penalty:
+                    pairterms = {}
+                    # Get interfragment distances
+                    for k1, fragment1 in fragdict:
+                        pairterms[k1] = {}
+                        for k2, fragment2 in fragdict:
+                            if k2 == k1:
+                                continue
+                            pairterms[k1][k2] = \
+                                PDBtool.get_dist_closest_atom(cm().get("ref_relax"), fragment1[0], fragment2[0])[0]
+                    use_adjusted = []
+                    # Actually applies distance penalties
+                    # Assumes we're always including fragment no. 1 - TODO: don't assume this, test combinations
+                    for k, frag in fragdict:
+                        if k == fragdict[0][0]:
+                            use_adjusted.append((frag[0][0], (frag[0], frag[1])))
+                            continue
+                        use_adjusted.append(
+                            (frag[0][0],
+                             (frag[0],
+                              frag[1] * max(1 - max(pairterms[fragdict[0][0]][k] - dist, 0) * self.join_penalty_factor,
+                                            0.01))))
+                    fragdict = sorted(use_adjusted, key=lambda _: _[1][1], reverse=False)
+                for k, fragment in fragdict:
+                    stop = False
+                    if len(final_peptide) + len(fragment[0]) + self.length_flexibility >= self.max_length:
+                        continue
+                    for residue in fragment[0]:
+                        if not self.fully_join_fragments and len(
+                                final_peptide) >= self.max_length + self.length_flexibility:
+                            stop = True
+                            break
+                        else:
+                            final_peptide.append(residue)
+                    if stop:
+                        break
+
+            logging.debug(f"Peptide fragments are: {pprint.pformat(final_peptide)}")
             return _SelectionStrategies.add_linkers(
                 sorted(final_peptide, key=lambda node: node.residue_id, reverse=False))
 
