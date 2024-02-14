@@ -4,6 +4,7 @@ import copy
 import itertools
 import logging
 import multiprocessing
+import operator
 import os
 import pprint
 import random
@@ -122,10 +123,11 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     ref: Union[Path, str] = None
     vsp: Union[Path, str] = None
     _cust_addin_mutate: bool = False
+    do_contacts_check: bool = False
 
-    def __init__(self, ref_pdb: Union[Path, str], populations: List[Population], score_func: Callable = None,
-                 select: Callable = None,
-                 crossover: Callable = None, mutate: Callable = None, config: dict = None,
+    def __init__(self, ref_pdb: Union[Path, str], populations: List[Population], ref_reb: Union[Path, str] = None,
+                 orig_pep_contacts: List[RosettaWrapper.REBprocessor.Node] = None, score_func: Callable = None,
+                 select: Callable = None, crossover: Callable = None, mutate: Callable = None, config: dict = None,
                  propagate_score_func: bool = True, metric: str = "MIN"):
         """
         Initializes the genetic algorithm strategy with the passed parameters.
@@ -133,6 +135,10 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         :param ref_pdb: A path to the reference pdb for which to optimize the peptide.
         :param populations: A list of populations to optimize. If you only want to use a single Population, you still
             have to wrap it in a list! ( [...] )
+        :param ref_reb: A reference residue energy breakdown of the original VSP+receptor complex to use in scoring.
+            (Optional) If this argument isn't given, original contact checking will not be performed.
+        :param orig_pep_contacts: The starting peptide to use for residue-residue contact analysis. (Optional) If this
+            argument isn't given, original contact checking will not be performed.
         :param score_func: (Optional) The score function to use on the individual. If not supplied, uses the builtin
         :param select: (Optional) The function to select parents. If not supplied, uses the builtin
         :param crossover: (Optional) The function to apply the crossover operation. If not supplied, uses the builtin
@@ -144,6 +150,22 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         """
         super().__init__()
         self.ref = ref_pdb
+        self.ref_reb = RosettaWrapper.REBprocessor.process_multipose(ref_reb)
+        self.orig_pep_contacts = orig_pep_contacts
+        self.contact_dict = {}
+        if self.ref_reb and self.orig_pep_contacts:
+            self.do_contacts_check = True
+            for n, node in enumerate(self.orig_pep_contacts):
+                if not isinstance(node, RosettaWrapper.REBprocessor.Node):
+                    if cm().get("permissive"):
+                        logging.warning(f"The orig_pep_contacts that was passed doesn't exclusively contain"
+                                        f"RosettaWrapper.REBprocessor.Node objects! Skipping entry {n} ({node}).")
+                    else:
+                        raise ValueError("The orig_pep_contacts that was passed doesn't exclusively contain "
+                                         "RosettaWrapper.REBprocessor.Node objects!")
+                # Only save interactions with nodes that aren't on chain and preferable for binding (<0)
+                self.contact_dict[n] = [partner[0] for partner in node.partners if partner[0][-1] != node.chain
+                                        and partner[1] < 0.0] if node.orig_res_id is not None else []
         self._score_func = score_func if score_func is not None else self.score
         self.populations = populations
         self._select = select if select is not None else self.select
@@ -193,7 +215,6 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         if self.config["selection_mode"] == "UNIFORM":
             return random.choices(list(lookup.keys()), k=take_num)
         # Order by fitness
-        ordered = None
         if self.metric == "MIN":
             ordered = sorted(lookup.items(), key=lambda tup: tup[1])
         elif self.metric == "MAX":
@@ -337,7 +358,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         shutil.copyfile(os.path.join(relax_path, "complex", best_complex + ".pdb"),
                         os.path.join(complex_pdb.parent, "best_complex.pdb"))
 
-        # Get binding energy
+        # Get interface energy
         score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "interface_score.sc")
         self.rw.run(RosettaWrapper.Flags().interface_analyzer, flag_suffix=peptide, options={
             "-in:file:s": False,
@@ -349,6 +370,32 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             "dG_separated")
         best_rosetta_score = scores["dG_separated"]
 
+        score_modifications = []
+        if self.ref_reb and self.orig_pep_contacts:
+            logging.debug("Doing score modification based on original contacts / interactions")
+            # Get binding energy
+            score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "reb_score.sc")
+            self.rw.run(RosettaWrapper.Flags().residue_energy_breakdown, flag_suffix=peptide, options={
+                "-in:file:s": os.path.join(complex_pdb.parent, "best_complex.pdb"),
+                "-out:file:silent": score_path,
+            })
+            interactions = RosettaWrapper.REBprocessor.process_multipose(score_path)
+            mismatch_tolerance = 0
+            # Every inter-residue interaction that doesn't appear for the corresponding residue in the new candidate
+            # that exceeds the tolerance (# of mismatches) incurs a 5% score penalty
+            for i in range(len(self.orig_pep_contacts)):
+                new_partners = [partner[0] for partner in interactions[i].partners]
+                ref_partners = self.contact_dict[i]
+                mismatch_count = 0
+                logging.debug(f"Doing residue {i} with partners {pprint.pformat(new_partners)}. "
+                              f"Original: {pprint.pformat(ref_partners)}")
+                for partner in ref_partners:
+                    if partner not in new_partners:
+                        mismatch_count += 1
+                        if mismatch_count > mismatch_tolerance:
+                            score_modifications.append((operator.mul, 0.95))
+                            break
+
         # Calculate SCII
         scii = SCII.scii_for_pdb(peptide_pdb, radius=self.config["score_scii_radius"])
 
@@ -357,6 +404,12 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         # more stable peptides and smaller values indicating less stable peptides
         # Therefore a percentage based bonus or malus will be applied if the value is higher or lower thant 0.3 - 0.4
         bonus = round((scii - 0.35), 1) * 0.5 + 1
+        score_modifications.append((operator.mul, bonus))
+
+        final_score = best_rosetta_score
+        for mod in score_modifications:
+            final_score = mod[0](final_score, mod[1])
+
         shared_dict[peptide] = {"total": best_rosetta_score * bonus, "rosetta_score": best_rosetta_score,
                                 "SCII": scii, "calc_scii_bonus": bonus}
         logging.debug(
