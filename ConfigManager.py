@@ -9,7 +9,7 @@ import random
 import sys
 from pathlib import Path
 from pprint import pformat
-from typing import Optional, Any
+from typing import Optional, Any, Union
 
 import numpy.random
 
@@ -23,6 +23,7 @@ class ConfigManager(metaclass=Singleton._Singleton):
     program_path: str = None
     results_path: str = None
     log_path: str = None
+    ref_relax: Union[Path, str] = None
 
     def __init__(self, args: argparse.Namespace = None,
                  base_path: str = os.path.abspath(os.path.join(os.path.dirname(__file__), f"..{os.sep}"))):
@@ -129,19 +130,22 @@ class ConfigManager(metaclass=Singleton._Singleton):
                         f"Could not find any Rosetta executables in the path you provided! ({r}) - Aborting...")
                     sys.exit(1)
 
-    def get(self, setting: str) -> Optional[Any]:
+    def get(self, setting: str, default: Any = None) -> Optional[Any]:
         """
         Gets a given setting, if it is set, otherwise returns None. For a list of all settings,
         see accompanying documentation.
         Important: command-line settings take precedence over config.json settings!
 
         :param setting: A string representing the name of the setting to be retrieved
-        :return: The value of the setting, or None if that setting hasn't been configured
+        :param default: What to return if the setting cannot be retrieved
+        :return: The value of the setting, or default (None) if that setting hasn't been configured
         """
         if setting == "program_path":
             return self.program_path
         if setting == "results_path":
             return self.results_path
+        if setting == "ref_relax":
+            return self.ref_relax
         if self.command_args and setting in self.command_args and self.command_args[setting] is not None:
             if isinstance(self.command_args[setting], str) and len(self.command_args[setting]) == 0:
                 return None
@@ -151,7 +155,7 @@ class ConfigManager(metaclass=Singleton._Singleton):
                 return None
             return self.file_config[setting]
         else:
-            return None
+            return default
 
     def log_config(self) -> None:
         """
