@@ -35,7 +35,7 @@ KEEP_LINES = ["HEADER", "REMARK", "SSBOND", "ATOM  ", "TER   ", "END   "]
 # These specify the columns in which the relevant data is encoded in standard PDB files.
 # See: https://www.wwpdb.org/documentation/file-format-content/format33/sect9.html#ATOM
 section_atom_number = [6, 11]
-section_atom_name = [13, 16]
+section_atom_name = [12, 16]
 section_altloc = 16
 section_residue = [17, 20]
 section_chain_id = 21
@@ -1458,6 +1458,31 @@ def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, re
     return Path(new_name)
 
 
+def get_alphacarbon(pdb: Union[str, Path], residue_id: Union[REBprocessor.Node, int]) -> Tuple[float, float, float]:
+    """
+    Returns the coordinates of the alpha carbon for the specified residue in the given PDB file.
+
+    :param pdb: Which PDB file to search for the residue
+    :param residue_id: Which residue to use (may be an int or REBProcessor.Node)
+    :return: A tuple of floats (x_coordinate, x_coordinate, z_coordinate)
+    """
+    residue_id = int(residue_id)
+    try:
+        pdb = Path(pdb).resolve(strict=True)
+    except (FileNotFoundError, RuntimeError) as e:
+        logging.error(f"Couldn't resolve the path to the PDB file. Stacktrace: {e}")
+        raise e
+    with open(pdb, "r") as i:
+        for line in i:
+            if line[0:6] != "ATOM  ":
+                continue
+            atom_type = line[section_atom_name[0]:section_atom_name[1]].strip()
+            if int(line[section_residue_number[0]:section_residue_number[1]]) == residue_id and atom_type == "CA":
+                return (float(line[section_x[0]:section_x[1]]),
+                        float(line[section_y[0]:section_y[1]]),
+                        float(line[section_z[0]:section_z[1]]))
+
+
 def get_centroid(pdb: Union[str, Path], residues: List[Union[REBprocessor.Node, int]], weighted: bool = False,
                  to_chain: str = False) -> Tuple[float, float, float]:
     """
@@ -1472,7 +1497,7 @@ def get_centroid(pdb: Union[str, Path], residues: List[Union[REBprocessor.Node, 
     :param residues: A list of either residue ids or REBprocessor.Node instances
     :param weighted: Whether to calculate a weighted centroid
     :param to_chain: If calculating a weighted centroid, which interaction energies to which chain to consider
-    :return:
+    :return: A tuple of floats (x coordinate, y coordinate, z coordinate)
     """
     if isinstance(residues, list) and len(residues) == 0:
         if cm().get("permissive"):
@@ -1703,7 +1728,7 @@ def get_dist_closest_atom(pdb: str, first: List[Union[int, REBprocessor.Node]],
     :param pdb: The path to the PDB to be read
     :param first: A list of residue ids
     :param second: A list of residue ids
-    :return: (closest distance, residue 1, residue 2)
+    :return: (closest distance, residue id 1, residue id 2)
     """
     if len(first) == 0 or len(second) == 0:
         if cm().get("permissive"):
