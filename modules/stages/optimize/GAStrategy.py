@@ -17,7 +17,7 @@ import ConfigManager
 from modules.wrappers import RosettaWrapper
 from modules.wrappers.PEPstrMODWrapper import PEPstrMODWrapper
 from util import SCII, file_utils, PDBtool
-from util.BLOSUM import BLOSUM
+from util.substitution_matrices import submat
 from . import OptimizationStrategy
 
 cm = ConfigManager.ConfigManager.get_instance
@@ -177,7 +177,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.config["crossover_mode"] = config.get("crossover_mode", "MULTIPLE")
         self.config["crossover_chance"] = config.get("crossover_chance", 0.1)
         self.config["mutation_rate"] = config.get("mutation_rate", 0.05)
-        self.config["mutation_bias"] = config.get("mutation_bias", BLOSUM.BLOSUM62_shifted)
+        self.config["mutation_bias"] = config.get("mutation_bias", submat.UNIFORM)
         self.config["num_generations"] = config.get("num_generations", 5)
         self.config["getstruc_backoff"] = config.get("getstruc_backoff",
                                                      10 * 60)  # wait 0-10 minutes, try to not stress webservice
@@ -274,11 +274,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         _ = list(copy.deepcopy(individual))
         for n, gene in enumerate(individual):
             if random.random() < self.config["mutation_rate"]:
-                if bmatrix := self.config["mutation_bias"]:
-                    _[n] = random.choices(population=list(bmatrix[gene].keys()), weights=list(bmatrix[gene].values()),
-                                          k=1)[0]
-                else:
-                    _[n] = random.choices(population=list(BLOSUM.BLOSUM62_shifted.get(gene)), k=1)[0]
+                _[n] = random.choices(population=list(self.config["mutation_bias"].get(gene).keys()),
+                                      weights=list(self.config["mutation_bias"].get(gene).values()),
+                                      k=1)[0]
         return "".join(_)
 
     def _getstruc(self, peptide: str) -> Tuple[Path, Path]:

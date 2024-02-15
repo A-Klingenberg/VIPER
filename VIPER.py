@@ -4,6 +4,7 @@ import os.path
 import pprint
 import random
 import shutil
+import sys
 from pathlib import Path
 from typing import Union, List
 
@@ -13,7 +14,7 @@ from modules.stages.optimize.GAStrategy import GAStrategy, Population
 from modules.wrappers import RosettaWrapper
 from modules.wrappers.PEPstrMODWrapper import PEPstrMODWrapper
 from util import file_utils, PDBtool
-from util.BLOSUM import BLOSUM
+from util.substitution_matrices import submat
 
 cm = ConfigManager.ConfigManager.get_instance
 
@@ -28,11 +29,10 @@ class VIPER:
     candidate_counter = 0
 
     def __init__(self, pdb: Union[str, Path]):
-        self.rw = RosettaWrapper.RosettaWrapper()
+        # self.rw = RosettaWrapper.RosettaWrapper()
         self.base_pdb = Path(pdb)
         self.selection_strat = PeptideGenerator._SelectionStrategies.get_strategy()()
         self.candidate_counter = 0
-        pass
 
     def run(self) -> None:
         """
@@ -40,33 +40,40 @@ class VIPER:
 
         :return: None
         """
-        self.preprocess_pdb()
-        nlist = self.do_energy_breakdown()
-        candidate = self.generate_peptide(nlist)
+        # self.preprocess_pdb()
+        # reb_file = self.do_energy_breakdown()
+        cm().ref_relax = "6m0j_renum_relaxed.pdb"
+        a = submat.SubMat("BLOSUM80_shifted.json")
+        print("AAAAA")
+        input()
+
+        raw_candidate = self.generate_peptide(RosettaWrapper.REBprocessor.process_multipose("reb.out"))
+
+        print("".join(str(raw_candidate)))
+        sys.exit(0)
 
         # Generate _without_ linkers!
-        peptide_structure = self.get_tertiary_structure([n for n in candidate if n.orig_res_id is not None],
+        peptide_structure = self.get_tertiary_structure([n for n in raw_candidate if n.orig_res_id is not None],
                                                         ["candidates", str(self.candidate_counter),
                                                          f"candidate.pdb"])
         # peptide_structure = self.get_tertiary_structure(candidate,
         #                                                ["candidates", str(self.candidate_counter), f"candidate.pdb"])
 
         curr_candidate_dir = Path(os.path.join(cm().get("results_path"), "candidates", str(self.candidate_counter)))
-        bmatrix = BLOSUM.BLOSUM62_shifted
+        bmatrix = submat.BLOSUM62_s()
+
+        sys.exit(0)
 
         def mutate(individual):
             _ = list(copy.deepcopy(individual))
             for n, gene in enumerate(_):
                 if random.random() < 0.05:
-                    if bmatrix:
-                        _[n] = random.choices(population=list(bmatrix[gene].keys()),
-                                              weights=list(bmatrix[gene].values()),
-                                              k=1)[0]
-                    else:
-                        _[n] = random.choices(population=list(BLOSUM.BLOSUM62.keys()), k=1)[0]
+                    _[n] = random.choices(population=list(bmatrix.get(gene).keys()),
+                                          weights=list(bmatrix.get(gene).values()),
+                                          k=1)[0]
             return "".join(_)
 
-        pepnodes = [n for n in candidate if n.orig_res_id is not None]
+        pepnodes = [n for n in raw_candidate if n.orig_res_id is not None]
         pepseq = "".join([PDBtool.three_to_one(n.amino_acid) for n in pepnodes])
 
         initpop = []
@@ -76,7 +83,7 @@ class VIPER:
                 initpop.append(mut)
         initpop.append(pepseq)
         print(pprint.pformat(initpop))
-        ga = GAStrategy(ref_pdb=self.reference_renum_relaxed, populations=[Population(lambda _: _, initpop)], config={
+        ga = GAStrategy(ref_pdb=self.reference_renum_relaxed, populations=[Population(initpop)], config={
             "select_percent": 0.3,
             "selection_mode": "ROULETTEWHEEL",
             "crossover_mode": "SINGLE",
@@ -87,7 +94,6 @@ class VIPER:
             "score_scii_radius": 10,
         })
         ga.run()
-
 
         """
         # Do a fast relaxation of the peptide while it is pinned in place
