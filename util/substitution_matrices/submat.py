@@ -14,8 +14,19 @@ cm = ConfigManager.ConfigManager.get_instance
 
 class SubMat:
     mat: dict = None
+    symmetric: bool = False
 
-    def __init__(self, name: Union[str, Path], fallback="BLOSUM62_shifted.json"):
+    def __init__(self, name: Union[str, Path], symmetric: bool = False, fallback: str = "BLOSUM62_shifted.json"):
+        """
+        Instantiates a substitution matrix with scores read from disk.
+
+        :param name: Which substitution matrix to load. This can be a path to a substitution matrix, or the name, if a
+            .json file with the same name is saved in this folder ("util/substitution_matrices/")
+        :param symmetric: Whether to allow symmetric lookups, i.e. if A->B can't be found use the value for B->A
+            (default: False)
+        :param fallback: What substitution matrix to use, if {name} can't be found
+        """
+        self.symmetric = symmetric
         use_fallback = False
         use_name = None
         if isinstance(name, Path):
@@ -62,12 +73,13 @@ class SubMat:
                 logging.error(f"Couldn't load fallback matrix: {ef}")
                 sys.exit(1)
 
-    def get(self, key: str):
+    def get(self, key: str, default=None):
         """
         Gets the substitution biases for the given amino acids. No guarantee is made regarding the format of the result.
         Usually this should be a dictionary of {amino acid: numeric value}.
 
         :param key: For which amino acid to get the substitution values
+        :param default: What to return, if no entry for key could be found in the substitution matrix
         :return: Usually a dictionary of format {amino acid: numeric value}
         """
         if _ := self.mat.get(key):
@@ -76,6 +88,64 @@ class SubMat:
             return _
         elif _ := self.mat.get(PDBtool.three_to_one(key)):
             return _
+        if default is not None:
+            return default
+        else:
+            raise KeyError(f"Couldn't find key {key} with in substitution matrix.")
+
+    def get_from_to(self, frm: str, to: str, default=1):
+        """
+        Get a specific substitution weight from one amino acid to another.
+
+        :param frm: From which amino acid to go
+        :param to: To which amino acid
+        :param default: What to return, if no strength for this combination could be found
+        :return: A substitution strength, should be a numeric value
+        """
+        use_weights = None
+        if _ := self.mat.get(frm):
+            use_weights = _
+        elif _ := self.mat.get(PDBtool.one_to_three(frm)):
+            use_weights = _
+        elif _ := self.mat.get(PDBtool.three_to_one(frm)):
+            use_weights = _
+        if use_weights is None:
+            # Could not find the 'from' amino acid at the first level of the substitution matrix. Potentially look
+            # up the reverse substitution score and return that now
+            if not self.symmetric:
+                logging.warning(f"The key {frm} could not be found at the first level of the substitution matrix. "
+                                f"Returning default: {default}")
+                return default
+            else:
+                if _ := self.mat.get(to):
+                    use_weights = _
+                elif _ := self.mat.get(PDBtool.one_to_three(to)):
+                    use_weights = _
+                elif _ := self.mat.get(PDBtool.three_to_one(to)):
+                    use_weights = _
+                else:
+                    logging.warning(f"Couldn't find either {frm} or {to} at first level of substitution matrix. "
+                                    f"Returning default: {default}")
+                    return default
+                if _ := use_weights.get(frm):
+                    return _
+                elif _ := use_weights.get(PDBtool.one_to_three(frm)):
+                    return _
+                elif _ := use_weights.get(PDBtool.three_to_one(frm)):
+                    return _
+                else:
+                    logging.warning(f"Couldn't find reverse entry {frm} for the weights for {to}. "
+                                    f"Returning default: {default}")
+                    return default
+        if _ := use_weights.get(to):
+            return _
+        elif _ := use_weights.get(PDBtool.one_to_three(to)):
+            return _
+        elif _ := use_weights.get(PDBtool.three_to_one(to)):
+            return _
+        else:
+            logging.warning(f"Couldn't find entry {to} for the weights for {frm}. Returning default: {default}")
+            return default
 
 
 class BLOSUM45(SubMat):
@@ -144,5 +214,6 @@ class BLOSUM90_s(SubMat):
 
 
 class UNIFORM(SubMat):
+    # All substitutions are equally likely
     def __init__(self):
         super().__init__("UNIFORM.json")
