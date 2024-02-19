@@ -519,6 +519,7 @@ class _SelectionStrategies:
                         for _ in curr_combination:
                             for __ in _.nlist:
                                 fragstring = fragstring + str(__) + " "
+                        fragstring = fragstring[:-1]  # remove trailing whitespace
                         logging.debug(f"Didn't find any eligible fragments to extend current fragment combination "
                                       f"({fragstring}).")
                         combination_list.append(curr_combination)

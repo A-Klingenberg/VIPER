@@ -121,7 +121,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     score_repo: dict = None
     generation: int = 0
     rw: RosettaWrapper = None
-    out_path: Path = None
+    out_path: Union[Path, str] = None
     ref: Union[Path, str] = None
     vsp: Union[Path, str] = None
     _cust_addin_mutate: bool = False
@@ -187,7 +187,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
-        self.out_path = Path(os.path.join(cm().get("results_path"), "GA"))
+        self.out_path = os.path.normpath(os.path.join(cm().get("results_path"), "GA"))
         if metric not in ["MIN", "MAX"]:
             self.metric = "MIN"
         else:
@@ -305,6 +305,12 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                       out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
         return PDBtool.join(peptide_pdb, self.vsp), peptide_pdb
 
+    def __getstate__(self):
+        temp_dict = self.__dict__.copy()
+        del temp_dict["rw"]  # Remove RosettaWrapper from pickled GAStrategy object to hopefully stop RecursionErrors
+        del temp_dict["ref_reb"]  # same reasoning here
+        return temp_dict
+
     def score(self, peptide: str, shared_dict=None, base_log_path: Union[Path, str] = None,
               verbosity: bool = False) -> Tuple[Any, dict]:
         """
@@ -355,7 +361,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         # Make sure complex for binding energy scoring is energetically favorable / relaxed
         relax_path = os.path.join(complex_pdb.parent, "relax")
         os.makedirs(os.path.join(relax_path, "complex"), exist_ok=True)
-        self.rw.run(RosettaWrapper.Flags().relax_base, flag_suffix=peptide, options={
+        RosettaWrapper.RosettaWrapper().run(RosettaWrapper.Flags().relax_base, flag_suffix=peptide, options={
             "-in:file:s": complex_pdb,
             "-nstruct": self.config["num_relax_individual"],
             "-out:path:all": os.path.join(relax_path, "complex"),
@@ -368,7 +374,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
 
         # Get interface energy
         score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "interface_score.sc")
-        self.rw.run(RosettaWrapper.Flags().interface_analyzer, flag_suffix=peptide, options={
+        RosettaWrapper.RosettaWrapper().run(RosettaWrapper.Flags().interface_analyzer, flag_suffix=peptide, options={
             "-in:file:s": False,
             "-s": os.path.join(complex_pdb.parent, "best_complex.pdb"),
             "-out:file:score_only": os.path.normpath(score_path),
@@ -379,11 +385,12 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         best_rosetta_score = scores["dG_separated"]
 
         score_modifications = []
-        if self.ref_reb and self.orig_pep_contacts:
+        if len(self.contact_dict) != 0:
             logging.debug("Doing score modification based on original contacts / interactions")
             # Get binding energy
             score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "reb_score.sc")
-            self.rw.run(RosettaWrapper.Flags().residue_energy_breakdown, flag_suffix=peptide, options={
+            RosettaWrapper.RosettaWrapper().run(RosettaWrapper.Flags().residue_energy_breakdown,
+                                                     flag_suffix=peptide, options={
                 "-in:file:s": os.path.join(complex_pdb.parent, "best_complex.pdb"),
                 "-out:file:silent": score_path,
             })
@@ -453,6 +460,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 # Scoring may be very time intensive, so do this concurrently for every individual within this
                 # population for which we don't already have a score
                 with multiprocessing.Pool(cm().get("num_CPU_cores", os.cpu_count())) as pool:
+                    print(f"{[(individual, '{}', self.out_path, cm().get('verbose')) for individual in pop if individual not in self.score_repo]}")
                     for result in pool.starmap(self._score_func,
                                                [(individual, {}, self.out_path, cm().get("verbose")) for
                                                 individual in pop if individual not in self.score_repo], chunksize=num):
