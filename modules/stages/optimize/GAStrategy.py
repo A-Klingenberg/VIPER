@@ -451,14 +451,14 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 # Size task chunks correctly, i. e. don't oversubscribe processors
                 # First, determine how many cores to use per tasklet from config, or use the
                 # next highest power of two of 20% of the number of processors in the system
-                # Second, see how often that number fits into the total number of processors to be used (default: on the
-                # system and use as many workers (or +1 if necessary) to ensure that the system isn't
-                # oversubscribed to cores
+                # Second, see how often the total number of required cores fits into the total number of processors to
+                # be used (default: total number of cores on the system, and use as many workers (or +1 if necessary) to
+                # ensure that the system isn't oversubscribed
                 num_available = multiprocessing.cpu_count()
                 if num_available == 1 and "sched_getaffinity" in dir(os):
                     num_available = len(os.sched_getaffinity(0))
-                num, extra = divmod(cm().get("rosetta_config.use_num_cores",
-                                             2**(math.ceil(0.2 * multiprocessing.cpu_count())-1).bit_length()),
+                num, extra = divmod(cm().get("rosetta_config.use_num_cores" * len(pop),
+                                             2**(math.ceil(0.2 * multiprocessing.cpu_count())-1).bit_length()) * len(pop),
                                     cm().get("num_CPU_cores", num_available))
                 if extra != 0:
                     num += 1
