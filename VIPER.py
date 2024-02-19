@@ -62,8 +62,6 @@ class VIPER:
         curr_candidate_dir = Path(os.path.join(cm().get("results_path"), "candidates", str(self.candidate_counter)))
         bmatrix = submat.BLOSUM62_s()
 
-        sys.exit(0)
-
         def mutate(individual):
             _ = list(copy.deepcopy(individual))
             for n, gene in enumerate(_):
@@ -79,7 +77,7 @@ class VIPER:
         initpop = []
         while len(initpop) < 10:
             mut = mutate(pepseq)
-            if mut not in initpop:
+            if mut not in initpop and mut != pepseq:
                 initpop.append(mut)
         initpop.append(pepseq)
         print(pprint.pformat(initpop))
