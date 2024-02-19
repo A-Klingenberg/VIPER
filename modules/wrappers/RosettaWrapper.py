@@ -119,7 +119,7 @@ class RosettaWrapper(metaclass=Singleton._Singleton):
             if "residue_energy_breakdown" in app:  # If REB is run with more than -np 1, there are duplicate entries
                 res = subprocess.run(["mpirun", "-np", "1", app, "@" + flag], capture_output=True, text=True)
             else:
-                res = subprocess.run(["mpirun", "-np", cm().get("rosetta_config.use_num_cores"), app, "@" + flag],
+                res = subprocess.run(["mpirun", "-np", str(cm().get("rosetta_config.use_num_cores")), app, "@" + flag],
                                      capture_output=True, text=True)
             logging.debug("Stdout from Rosetta run: " + res.stdout)
             if len(res.stderr) > 0:
