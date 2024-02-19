@@ -21,27 +21,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--permissive", help="Set this flag to have VIPER continue running even if it encounters "
                                              "problems which might lead to unexpected behaviour", type=bool,
                         default=True)
-    parser.add_argument("--num_CPU_cores", help="How many CPU cores to use", type=int, default=1)
+    parser.add_argument("--num_CPU_cores", help="How many CPU cores to use", type=int)
     parser.add_argument("--vsp_chain", help="The chain id of the viral surface protein", type=str)
     parser.add_argument("--partner_chain", help="The chain id of the partner protein, for which the"
                                                 "inhibitory peptide candidates shall be generated", type=str)
     # rosetta config
     parser.add_argument("--rosetta_config.path", help="The path to your rosetta executable", type=str)
     parser.add_argument("--rosetta_config.path_out",
-                        help="The path to where the output of rosetta runs shall be written", type=str,
-                        default="path_out")
+                        help="The path to where the output of rosetta runs shall be written", type=str)
     parser.add_argument("--rosetta_config.relax_protein_runs", help="How many protein relaxation runs should be run",
-                        type=int, default=100)
-    parser.add_argument("--rosetta_config.relax_xml_runs", help="How many xml relaxation runs should be run", type=int,
-                        default=40)
+                        type=int)
+    parser.add_argument("--rosetta_config.relax_xml_runs", help="How many xml relaxation runs should be run", type=int)
     parser.add_argument("--rosetta_config.relax_bb_runs", help="How many backbone relaxation runs should be run",
-                        type=int, default=30)
+                        type=int)
     parser.add_argument("--rosetta_config.relax_fast_runs", help="How many fast relaxation runs should be run",
-                        type=int, default=30)
-    parser.add_argument("--rosetta_config.docking_runs", help="How many docking runs should be run", type=int,
-                        default=5000)
-    parser.add_argument("--rosetta_config.refine_runs", help="How many refinement runs should be run", type=int,
-                        default=100)
+                        type=int)
+    parser.add_argument("--rosetta_config.docking_runs", help="How many docking runs should be run", type=int)
+    parser.add_argument("--rosetta_config.refine_runs", help="How many refinement runs should be run", type=int)
 
 
     # gromacs config
