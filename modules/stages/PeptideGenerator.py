@@ -51,6 +51,8 @@ class _SelectionStrategies:
                 new_nlist.append(REBprocessor.Node(amino_acid=node.amino_acid,
                                                    residue_id=node.residue_id,
                                                    chain=node.chain,
+                                                   partners=node.partners,
+                                                   strength=node.strength,
                                                    orig_res_id=node.orig_res_id))
                 first = False
                 continue
@@ -62,7 +64,8 @@ class _SelectionStrategies:
                 # Number of elements to use from linker (usually it's all of them)
                 use_num = len(linker)
                 if interres - 1 < len(linker):
-                    logging.warning(f"Trying to link a gap between fragments that is shorter than the linker! "
+                    logging.warning(f"Trying to link a gap between fragments ({new_nlist[-1]} -> {node}) that is "
+                                    f"shorter than the linker ({linker})! "
                                     f"Using policy {cm().get('peptide_generator.linker_oversize_policy').upper()}.")
                     policy = cm().get('peptide_generator.linker_oversize_policy').upper()
                     if policy == "TRUNCATE":
@@ -74,7 +77,7 @@ class _SelectionStrategies:
                 base_id = new_nlist[-1].residue_id
 
                 # Check that length of current candidate w/ linkers + linker + remaining peptide doesn't exceed length
-                # (Doesn't check for future linkers, but they will be considered, once they are encountered)
+                # (Doesn't check for future linkers, but they will be considered once they are encountered)
                 if respect_length_limit and len(new_nlist) + len(linker) + len(nlist[n:]) >= cm().get(
                         "peptide_generator.max_length"):
                     raise IndexError("Cannot insert linker, because it would make the peptide length exceed the limit.")
@@ -512,7 +515,8 @@ class _SelectionStrategies:
                     elif best_n_frag is not None and best_c_frag is None:
                         use_frag = best_n_frag
                     else:
-                        logging.debug("Didn't find any eligible fragments to extend current fragment combination.")
+                        logging.debug(f"Didn't find any eligible fragments to extend current fragment combination "
+                                      f"({pprint.pformat(curr_combination, compact=True)}).")
                         combination_list.append(curr_combination)
                         return
 
@@ -616,7 +620,7 @@ class _SelectionStrategies:
                     if stop:
                         break
 
-            logging.debug(f"Peptide fragments are: {pprint.pformat(final_peptide)}")
+            logging.debug(f"Final joined peptide fragments are: {pprint.pformat(final_peptide, compact=True)}")
             return _SelectionStrategies.add_linkers(
                 sorted(final_peptide, key=lambda node: node.residue_id, reverse=False))
 
