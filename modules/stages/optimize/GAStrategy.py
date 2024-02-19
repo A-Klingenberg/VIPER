@@ -4,6 +4,7 @@ import copy
 import itertools
 import json
 import logging
+import math
 import multiprocessing
 import operator
 import os
@@ -439,7 +440,12 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 old_num = len(pop)
                 # Get scores for population
                 # Size task chunks correctly, i. e. don't oversubscribe processors
-                num, extra = divmod(cm().get("rosetta_config.use_num_cores", 1) * len(pop),
+                # First, determine how many cores to use per tasklet from config, or use the
+                # next highest power of two of 20% of the number of processors in the system
+                # Second, see how often that number fits into the total number of processors on the system and use as
+                # many waorkers (or +1 if necessary) to ensure that the system isn't oversubscribed to cores
+                num, extra = divmod(cm().get("rosetta_config.use_num_cores",
+                                             2**(math.ceil(0.2 * os.cpu_count())-1).bit_length()) * len(pop),
                                     cm().get("num_CPU_cores", os.cpu_count()))
                 if extra != 0:
                     num += 1
