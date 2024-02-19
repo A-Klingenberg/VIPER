@@ -442,8 +442,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 # Size task chunks correctly, i. e. don't oversubscribe processors
                 # First, determine how many cores to use per tasklet from config, or use the
                 # next highest power of two of 20% of the number of processors in the system
-                # Second, see how often that number fits into the total number of processors on the system and use as
-                # many waorkers (or +1 if necessary) to ensure that the system isn't oversubscribed to cores
+                # Second, see how often that number fits into the total number of processors to be used (default: on the
+                # system and use as many workers (or +1 if necessary) to ensure that the system isn't
+                # oversubscribed to cores
                 num, extra = divmod(cm().get("rosetta_config.use_num_cores",
                                              2**(math.ceil(0.2 * os.cpu_count())-1).bit_length()) * len(pop),
                                     cm().get("num_CPU_cores", os.cpu_count()))
