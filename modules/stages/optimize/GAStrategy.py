@@ -405,7 +405,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             # Every inter-residue interaction that doesn't appear for the corresponding residue in the new candidate
             # that exceeds the tolerance (# of mismatches) incurs a 5% score penalty
             for i in range(len(self.orig_pep_contacts)):
-                new_partners = [partner[0] for partner in interactions[i].partners]
+                new_partners = [partner[0] for partner in interactions[i].partners if
+                                partner[0][-1] == PDBtool.get_chains(self.vsp)[0]]
                 ref_partners = self.contact_dict[i]
                 mismatch_count = 0
                 logging.debug(f"Doing residue {i} with partners {pprint.pformat(new_partners)}. "
