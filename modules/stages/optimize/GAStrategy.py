@@ -454,15 +454,15 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 # Second, see how often that number fits into the total number of processors to be used (default: on the
                 # system and use as many workers (or +1 if necessary) to ensure that the system isn't
                 # oversubscribed to cores
-                num_available = os.cpu_count()
+                num_available = multiprocessing.cpu_count()
                 if num_available == 1 and "sched_getaffinity" in dir(os):
                     num_available = len(os.sched_getaffinity(0))
                 num, extra = divmod(cm().get("rosetta_config.use_num_cores",
-                                             2**(math.ceil(0.2 * os.cpu_count())-1).bit_length()),
+                                             2**(math.ceil(0.2 * multiprocessing.cpu_count())-1).bit_length()),
                                     cm().get("num_CPU_cores", num_available))
                 if extra != 0:
                     num += 1
-                logging.debug(f"Determined chunksize ({num}) with ({cm().get('num_CPU_cores', os.cpu_count())}) processors")
+                logging.debug(f"Determined chunksize ({num}) with ({cm().get('num_CPU_cores', num_available)}) processors")
                 # Scoring may be very time intensive, so do this concurrently for every individual within this
                 # population for which we don't already have a score
                 with multiprocessing.Pool(cm().get("num_CPU_cores", num_available)) as pool:
