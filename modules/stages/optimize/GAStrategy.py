@@ -455,7 +455,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 # system and use as many workers (or +1 if necessary) to ensure that the system isn't
                 # oversubscribed to cores
                 num, extra = divmod(cm().get("rosetta_config.use_num_cores",
-                                             2**(math.ceil(0.2 * os.cpu_count())-1).bit_length()) * len(pop),
+                                             2**(math.ceil(0.2 * os.cpu_count())-1).bit_length()),
                                     cm().get("num_CPU_cores", os.cpu_count()))
                 if extra != 0:
                     num += 1
