@@ -1,6 +1,7 @@
 # This code has been adapted from previous work by Austin Seamann, Dario Ghersi, and Ryan Ehrlich.
 # Please refer to https://github.com/Aseamann/ACEdecoy
 import collections
+import io
 import logging
 import os
 import pprint
@@ -1213,14 +1214,18 @@ def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str]
                         raise ValueError(f"There were conflicting chain ids in {pdb_1} and {pdb_2} ({c2}), but no "
                                          f"suitable replacement could be found!")
     pdb_1 = os.path.normpath(pdb_1)
-    pdb_2 = os.path.normpath(update_chain_id(pdb_2, {orig: new for orig, new in conflicts}))
+    pdb_2_txt = os.path.normpath(update_chain_id(pdb_2, {orig: new for orig, new in conflicts}, return_only=True))
     pdbs = (pdb_1, pdb_2)
-    for pdb in pdbs:
-        with open(pdb, "r") as i:
-            for line in i:
-                if line[0:6] == "ATOM  " or line[0:6] == "TER   ":
-                    # FIXME: Update atom and residue numbering as well!!
-                    atoms_lines.append(line)
+    with open(pdb_1, "r") as i:
+        for line in i:
+            if line[0:6] == "ATOM  " or line[0:6] == "TER   ":
+                # FIXME: Update atom and residue numbering as well!!
+                atoms_lines.append(line)
+    with io.StringIO(pdb_2_txt) as i:
+        for line in i:
+            if line[0:6] == "ATOM  " or line[0:6] == "TER   ":
+                # FIXME: Update atom and residue numbering as well!!
+                atoms_lines.append(line)
     new_name = pdb_1[:-4] + "_" + pdb_2.split(os.sep)[-1][:-4] + "_concat.pdb"
     if out:
         new_name = out
@@ -1266,7 +1271,7 @@ def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> None:
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
-def update_chain_id(pdb: Union[Path, str], id_mapping: dict, out: Union[Path, str] = None) -> Path:
+def update_chain_id(pdb: Union[Path, str], id_mapping: dict, out: Union[Path, str] = None, return_only: bool = False) -> Union[Path, str]:
     """
     Update the labels based on submitted chain dictionary
     Ex of dictionary: {'A':'D', 'B':'E'}  A gets replaced with D and B gets replaced with E
@@ -1274,6 +1279,8 @@ def update_chain_id(pdb: Union[Path, str], id_mapping: dict, out: Union[Path, st
     :param pdb: Path to the PDB to be read
     :param id_mapping: Dictionary of chain ids that need to be adjusted. Every chain id of _key_ gets replaced with _val_
     :param out: Optional new name for the PDB that is written. Default is '{pdb}_upd_chains.pdb'
+    :param return_only: If True, only returns the resultant PDB as a str, but doesn't write it to file
+    :return: Either a Path to the updated PDB (if return_only=False), else the updated PDB as a str
     """
     pdb = os.path.normpath(pdb)
     logging.info(f"Updating chain ids in '{pdb}' using mapping {id_mapping}...")
@@ -1293,22 +1300,26 @@ def update_chain_id(pdb: Union[Path, str], id_mapping: dict, out: Union[Path, st
                 atom['chain_id'] = id_mapping[chain]
             new_order.append(atom)
     new_name = pdb[:-4] + "_upd_chains.pdb"
-    if out:
-        new_name = out
-    with open(new_name, "w") as f:
-        f.write(rebuild_atom_line(new_order))
-        f.write("TER\nEND\n")
-        logging.info(f"Wrote PDB with updated chain ids to '{new_name}'")
-    return Path(new_name)
+    if not return_only:
+        if out:
+            new_name = out
+        with open(new_name, "w") as f:
+            f.write(rebuild_atom_line(new_order))
+            f.write("TER\nEND\n")
+            logging.info(f"Wrote PDB with updated chain ids to '{new_name}'")
+        return Path(new_name)
+    else:
+        return rebuild_atom_line(new_order) + "TER\nEND\n"
 
 
 def match_number(pdb: str, upd_chains: str, pdb_ref: str, custom: str = None, rename: str = None) -> Path:
     """
     Align chains and for amino acids that overlap, renumber them to the reference chains
     numbering. Writes an updated PDB to disk.
+    WARNING: This may create PDBs with atom id or residue id conflicts!
 
-    :param pdb: The PDB whose chains shall be aligned
-    :param upd_chains: Which chains in the base PDB shall be aligned, should be uppercase chain ids without separators
+    :param pdb: The PDB whose chains shall be renumbered
+    :param upd_chains: Which chains in the base PDB shall be renumbered, should be uppercase chain ids without separators
     :param pdb_ref: The reference PDB to align against
     :param custom: Optional comma separated str of numbering to apply to the shortest chain
     :param rename: Optional name for the updated PDB. Default is '{pdb}_orinum.pdb'

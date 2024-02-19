@@ -389,13 +389,16 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         score_modifications = []
         if len(self.contact_dict) != 0:
             logging.debug("Doing score modification based on original contacts / interactions")
+            best_renum = PDBtool.match_number(os.path.join(complex_pdb.parent, "best_complex.pdb"),
+                                              "".join(PDBtool.get_chains(self.vsp)),
+                                              self.ref)
             # Get binding energy
             score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "reb_score.sc")
-            RosettaWrapper.RosettaWrapper().run(RosettaWrapper.Flags().residue_energy_breakdown,
-                                                     flag_suffix=peptide, options={
-                "-in:file:s": os.path.join(complex_pdb.parent, "best_complex.pdb"),
-                "-out:file:silent": score_path,
-            })
+            RosettaWrapper.RosettaWrapper().run(RosettaWrapper.Flags().residue_energy_breakdown, flag_suffix=peptide,
+                                                options={
+                                                    "-in:file:s": best_renum,
+                                                    "-out:file:silent": score_path,
+                                                })
             interactions = RosettaWrapper.REBprocessor.process_multipose(score_path)
             mismatch_tolerance = 0
             # Every inter-residue interaction that doesn't appear for the corresponding residue in the new candidate
@@ -458,15 +461,18 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 if num_available == 1 and "sched_getaffinity" in dir(os):
                     num_available = len(os.sched_getaffinity(0))
                 num, extra = divmod(cm().get("rosetta_config.use_num_cores" * len(pop),
-                                             2**(math.ceil(0.2 * multiprocessing.cpu_count())-1).bit_length()) * len(pop),
+                                             2 ** (math.ceil(
+                                                 0.2 * multiprocessing.cpu_count()) - 1).bit_length()) * len(pop),
                                     cm().get("num_CPU_cores", num_available))
                 if extra != 0:
                     num += 1
-                logging.debug(f"Determined chunksize ({num}) with ({cm().get('num_CPU_cores', num_available)}) processors")
+                logging.debug(
+                    f"Determined chunksize ({num}) with ({cm().get('num_CPU_cores', num_available)}) processors")
                 # Scoring may be very time intensive, so do this concurrently for every individual within this
                 # population for which we don't already have a score
                 with multiprocessing.Pool(cm().get("num_CPU_cores", num_available)) as pool:
-                    print(f"{[(individual, '{}', self.out_path, cm().get('verbose')) for individual in pop if individual not in self.score_repo]}")
+                    print(
+                        f"{[(individual, '{}', self.out_path, cm().get('verbose')) for individual in pop if individual not in self.score_repo]}")
                     for result in pool.starmap(self._score_func,
                                                [(individual, {}, self.out_path, cm().get("verbose")) for
                                                 individual in pop if individual not in self.score_repo], chunksize=num):
