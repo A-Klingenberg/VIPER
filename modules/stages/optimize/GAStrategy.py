@@ -293,7 +293,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         """
         if backoff := self.config["getstruc_backoff"]:
             # Wait a bit to stagger requests to webservice
-            time.sleep(random.randrange(0, backoff))
+            delay = random.randrange(0, backoff)
+            logging.debug(f"Delaying {delay} seconds before getting structure for {peptide}")
+            time.sleep(delay)
         pdb = PEPstrMODWrapper.submit_peptide(sequence=str(peptide))
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
         pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
@@ -457,6 +459,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                     cm().get("num_CPU_cores", os.cpu_count()))
                 if extra != 0:
                     num += 1
+                logging.debug(f"Determined chunksize ({num}) with ({cm().get('num_CPU_cores', os.cpu_count())}) processors")
                 # Scoring may be very time intensive, so do this concurrently for every individual within this
                 # population for which we don't already have a score
                 with multiprocessing.Pool(cm().get("num_CPU_cores", os.cpu_count())) as pool:
