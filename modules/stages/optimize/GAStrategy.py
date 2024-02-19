@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import itertools
+import json
 import logging
 import multiprocessing
 import operator
@@ -158,7 +159,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             for n, node in enumerate(self.orig_pep_contacts):
                 if not isinstance(node, RosettaWrapper.REBprocessor.Node):
                     if cm().get("permissive"):
-                        logging.warning(f"The orig_pep_contacts that was passed doesn't exclusively contain"
+                        logging.warning(f"The orig_pep_contacts that was passed doesn't exclusively contain "
                                         f"RosettaWrapper.REBprocessor.Node objects! Skipping entry {n} ({node}).")
                     else:
                         raise ValueError("The orig_pep_contacts that was passed doesn't exclusively contain "
@@ -197,6 +198,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.vsp = PDBtool.remove_chain(self.ref, [cm().get("partner_chain")],
                                         os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
         self._cust_addin_mutate = cm().get("optimize.ga.custom_addin_mutate")
+        logging.info(f"Instantiating with following parameters: {pprint.pformat(self.config, compact=True)}")
 
     def select(self, population: Population, n: int = None) -> List:
         """
@@ -303,25 +305,32 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         return PDBtool.join(peptide_pdb, self.vsp), peptide_pdb
 
     def score(self, peptide: str, shared_dict=None, base_log_path: Union[Path, str] = None,
-              verbosity: bool = False) -> dict:
+              verbosity: bool = False) -> Tuple[Any, dict]:
         """
         Scores a peptide and updates the shared_dict (or self.score_repo if not specified). Logs to a separate file
         in the base_log_path given the verbosity. Returns a dict of the scores, with the value under "total" being the
         aggregate score.
 
         :param peptide: The peptide as a str of amino acids in single letter notation
-        :param shared_dict: (Optional) The dictionary to update with the scores. If not specified,
-            defaults to self.score_repo
+        :param shared_dict: (Optional) A dictionary shared between runs of this method. If not specified,
+            defaults to self.score_repo - You should either make sure this is a DictProxy for safe concurrent sharing,
+            or a JSON string that can be deserialized to a dictionary. You can NOT assume that changes made to the
+            dictionary will be transparent/permanent outside of this method! This is intended as one-way, read-only
+            sharing of values.
         :param base_log_path: The base log path to put the log file under. Will be written to "score_log.txt" in the
             subfolder "gen{self.generation}_{peptide}"
         :param verbosity: Whether to enable verbose logging. (default: False)
-        :return:
+        :return: A tuple of an individual and it's score. The score should be a dictionary with the individual terms,
+            and a total score under the key 'total'
         """
         if shared_dict is None:
             shared_dict = self.score_repo
+        elif not isinstance(shared_dict, dict) and isinstance(shared_dict, str):
+            shared_dict = json.loads(shared_dict)
         if base_log_path is None:
             base_log_path = self.out_path
         if peptide in shared_dict:
+            # This case should never happen, since this is already checked before calling score. This is a safety
             return shared_dict[peptide]["total"]
         # Because we are likely running this in a separate process, log to separate files for a more robust approach
         os.makedirs(os.path.normpath(os.path.join(base_log_path, f"gen{self.generation}_{peptide}")), exist_ok=True)
@@ -408,11 +417,12 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         for mod in score_modifications:
             final_score = mod[0](final_score, mod[1])
 
-        shared_dict[peptide] = {"total": best_rosetta_score * bonus, "rosetta_score": best_rosetta_score,
-                                "SCII": scii, "calc_scii_bonus": bonus}
+        tup = (peptide, {"total": best_rosetta_score * bonus, "rosetta_score": best_rosetta_score,
+                         "SCII": scii, "calc_scii_bonus": bonus})
+
         logging.debug(
-            f"Scoring {peptide} (score {shared_dict[peptide]['total']}) took {(time.time() - start) / 60:.1f} minutes!")
-        return shared_dict[peptide]
+            f"Scoring {peptide} (score {tup[1]['total']}) took {(time.time() - start) / 60:.1f} minutes!")
+        return tup
 
     def run(self) -> Tuple[Any, float]:
         """
@@ -428,17 +438,19 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 logging.info(f"Old pop [#{pop_count}] : {pprint.pformat(pop)}")
                 old_num = len(pop)
                 # Get scores for population
-                # Scoring may be very time intensive, so do this concurrently
-                # for every individual within this population
-                with multiprocessing.Manager() as manager:
-                    shared_dict = manager.dict()
-                    shared_dict.update(self.score_repo)
-                    with multiprocessing.Pool() as pool:
-                        pool.starmap(self._score_func,
-                                     [(individual, shared_dict, self.out_path, cm().get("verbose")) for individual in
-                                      pop])
-                    self.score_repo.update(shared_dict)
-                    # We can now be sure that we have scores for every individual in this population
+                # Size task chunks correctly, i. e. don't oversubscribe processors
+                num, extra = divmod(cm().get("rosetta_config.use_num_cores", 1) * len(pop),
+                                    cm().get("num_CPU_cores", os.cpu_count()))
+                if extra != 0:
+                    num += 1
+                # Scoring may be very time intensive, so do this concurrently for every individual within this
+                # population for which we don't already have a score
+                with multiprocessing.Pool(cm().get("num_CPU_cores", os.cpu_count())) as pool:
+                    for result in pool.starmap(self._score_func,
+                                               [(individual, {}, self.out_path, cm().get("verbose")) for
+                                                individual in pop if individual not in self.score_repo], chunksize=num):
+                        self.score_repo[result[0]] = result[1]
+                # We can now be sure that we have scores for every individual in this population
                 families = []
                 parents = self._select(pop)
                 # Since we need to pair up parents, check for even number of parents. If the number of parents is odd,
