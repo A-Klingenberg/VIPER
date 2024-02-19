@@ -184,6 +184,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.config["getstruc_backoff"] = config.get("getstruc_backoff",
                                                      10 * 60)  # wait 0-10 minutes, try to not stress webservice
         self.config["num_relax_individual"] = config.get("num_relax_individual", 10)
+        self.config["dynamic_concurrent_scoring"] = config.get("dynamic_concurrent_scoring", False)
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
@@ -451,32 +452,42 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 logging.info(f"Old pop [#{pop_count}] : {pprint.pformat(pop)}")
                 old_num = len(pop)
                 # Get scores for population
-                # Size task chunks correctly, i. e. don't oversubscribe processors
-                # First, determine how many cores to use per tasklet from config, or use the
-                # next highest power of two of 20% of the number of processors in the system
-                # Second, see how often the total number of required cores fits into the total number of processors to
-                # be used (default: total number of cores on the system, and use as many workers (or +1 if necessary) to
-                # ensure that the system isn't oversubscribed
-                num_available = multiprocessing.cpu_count()
-                if num_available == 1 and "sched_getaffinity" in dir(os):
-                    num_available = len(os.sched_getaffinity(0))
-                num, extra = divmod(cm().get("rosetta_config.use_num_cores" * len(pop),
-                                             2 ** (math.ceil(
-                                                 0.2 * multiprocessing.cpu_count()) - 1).bit_length()) * len(pop),
-                                    cm().get("num_CPU_cores", num_available))
-                if extra != 0:
-                    num += 1
-                logging.debug(
-                    f"Determined chunksize ({num}) with ({cm().get('num_CPU_cores', num_available)}) processors")
-                # Scoring may be very time intensive, so do this concurrently for every individual within this
-                # population for which we don't already have a score
-                with multiprocessing.Pool(cm().get("num_CPU_cores", num_available)) as pool:
-                    print(
-                        f"{[(individual, '{}', self.out_path, cm().get('verbose')) for individual in pop if individual not in self.score_repo]}")
-                    for result in pool.starmap(self._score_func,
-                                               [(individual, {}, self.out_path, cm().get("verbose")) for
-                                                individual in pop if individual not in self.score_repo], chunksize=num):
-                        self.score_repo[result[0]] = result[1]
+                if self.config.get("dynamic_concurrent_scoring", False):
+                    # Size task chunks correctly, i. e. don't oversubscribe processors
+                    # First, determine how many cores to use per tasklet from config, or use the
+                    # next highest power of two of 20% of the number of processors in the system
+                    # Second, see how often the total number of required cores fits into the total number of processors
+                    # to be used (default: total number of cores on the system, and use as many workers
+                    # (or +1 if necessary) to ensure that the system isn't oversubscribed
+                    num_available = multiprocessing.cpu_count()
+                    if num_available == 1 and "sched_getaffinity" in dir(os):
+                        num_available = len(os.sched_getaffinity(0))
+                    num, extra = divmod(cm().get("rosetta_config.use_num_cores" * len(pop),
+                                                 2 ** (math.ceil(
+                                                     0.2 * multiprocessing.cpu_count()) - 1).bit_length()) * len(pop),
+                                        cm().get("num_CPU_cores", num_available))
+                    if extra != 0:
+                        num += 1
+                    logging.debug(
+                        f"Determined chunksize ({num}) with ({cm().get('num_CPU_cores', num_available)}) processors")
+                    # Scoring may be very time intensive, so do this concurrently for every individual within this
+                    # population for which we don't already have a score
+                    with multiprocessing.Pool(cm().get("num_CPU_cores", num_available)) as pool:
+                        print(
+                            f"{[(individual, '{}', self.out_path, cm().get('verbose')) for individual in pop if individual not in self.score_repo]}")
+                        for result in pool.starmap(self._score_func,
+                                                   [(individual, {}, self.out_path, cm().get("verbose")) for
+                                                    individual in pop if individual not in self.score_repo],
+                                                   chunksize=num):
+                            self.score_repo[result[0]] = result[1]
+                else:
+                    # Scoring may be very time intensive, so do this concurrently for every individual within this
+                    # population for which we don't already have a score
+                    with multiprocessing.Pool() as pool:
+                        for result in pool.starmap(self._score_func,
+                                                   [(individual, {}, self.out_path, cm().get("verbose")) for
+                                                    individual in pop if individual not in self.score_repo]):
+                            self.score_repo[result[0]] = result[1]
                 # We can now be sure that we have scores for every individual in this population
                 families = []
                 parents = self._select(pop)
