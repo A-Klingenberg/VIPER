@@ -337,7 +337,7 @@ class _SelectionStrategies:
             score: float
 
             def __repr__(self):
-                return json.dumps(asdict(self))
+                return f"[{' '.join([str(str(n) for n in self.nlist)])}]"
 
             def __str__(self):
                 return self.__repr__()
@@ -469,7 +469,7 @@ class _SelectionStrategies:
                 fraglist = []
                 for _, fragment in fragments.items():
                     # PDB is N -> C
-                    fraglist.append(self._Fragment(
+                    fraglist.append(_SelectionStrategies.FragmentJoiner._Fragment(
                         n_ter_resid=fragment[0][0].residue_id,
                         n_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, fragment[0][0]),
                         c_ter_resid=fragment[0][-1].residue_id,
@@ -515,8 +515,12 @@ class _SelectionStrategies:
                     elif best_n_frag is not None and best_c_frag is None:
                         use_frag = best_n_frag
                     else:
+                        fragstring = ""
+                        for _ in curr_combination:
+                            for __ in _.nlist:
+                                fragstring = fragstring + str(__) + " "
                         logging.debug(f"Didn't find any eligible fragments to extend current fragment combination "
-                                      f"({pprint.pformat(curr_combination, compact=True)}).")
+                                      f"({fragstring}).")
                         combination_list.append(curr_combination)
                         return
 
