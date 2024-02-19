@@ -1215,7 +1215,6 @@ def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str]
                                          f"suitable replacement could be found!")
     pdb_1 = os.path.normpath(pdb_1)
     pdb_2_txt = os.path.normpath(update_chain_id(pdb_2, {orig: new for orig, new in conflicts}, return_only=True))
-    pdbs = (pdb_1, pdb_2)
     with open(pdb_1, "r") as i:
         for line in i:
             if line[0:6] == "ATOM  " or line[0:6] == "TER   ":
@@ -1226,7 +1225,7 @@ def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str]
             if line[0:6] == "ATOM  " or line[0:6] == "TER   ":
                 # FIXME: Update atom and residue numbering as well!!
                 atoms_lines.append(line)
-    new_name = pdb_1[:-4] + "_" + pdb_2.split(os.sep)[-1][:-4] + "_concat.pdb"
+    new_name = pdb_1[:-4] + "_" + str(pdb_2).split(os.sep)[-1][:-4] + "_concat.pdb"
     if out:
         new_name = out
     with open(new_name, "w") as o:
