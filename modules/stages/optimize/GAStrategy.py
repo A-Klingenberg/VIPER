@@ -409,12 +409,14 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                 partner[0][-1] == PDBtool.get_chains(self.vsp)[0]]
                 ref_partners = self.contact_dict[i]
                 mismatch_count = 0
-                logging.debug(f"Doing residue {i} with partners {pprint.pformat(new_partners)}. "
-                              f"Original: {pprint.pformat(ref_partners)}")
+                logging.debug(f"Doing residue {i+1} with partners {pprint.pformat(new_partners, compact=True)}. "
+                              f"Original: {pprint.pformat(ref_partners, compact=True)}")
                 for partner in ref_partners:
                     if partner not in new_partners:
                         mismatch_count += 1
+                        logging.debug(f"Original partner {partner} didn't persist, mismatch count: {mismatch_count}")
                         if mismatch_count > mismatch_tolerance:
+                            logging.debug(f"Exceeded mismatch tolerance ({mismatch_tolerance})")
                             score_modifications.append((operator.mul, 0.95))
                             break
 
@@ -429,7 +431,10 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         score_modifications.append((operator.mul, bonus))
 
         final_score = best_rosetta_score
+
+        logging.debug(f"Score modifications are: {pprint.pformat(score_modifications, compact=True)}")
         for mod in score_modifications:
+            logging.debug(f"Current score: {final_score}, applying {mod[0]} with {mod[1]}")
             final_score = mod[0](final_score, mod[1])
 
         tup = (peptide, {"total": best_rosetta_score * bonus, "rosetta_score": best_rosetta_score,
