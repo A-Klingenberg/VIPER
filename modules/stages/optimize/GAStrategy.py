@@ -165,8 +165,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                     else:
                         raise ValueError("The orig_pep_contacts that was passed doesn't exclusively contain "
                                          "RosettaWrapper.REBprocessor.Node objects!")
-                # Only save interactions with nodes that aren't on chain and preferable for binding (<0)
-                self.contact_dict[n] = [partner[0] for partner in node.partners if partner[0][-1] != node.chain
+                # Only save interactions with nodes that aren't on same chain and are preferable for binding (<0)
+                self.contact_dict[n] = [int(partner[0][:-1]) for partner in node.partners if
+                                        partner[0][-1] != node.chain
                                         and partner[1] < 0.0] if node.orig_res_id is not None else []
         self._score_func = score_func if score_func is not None else self.score
         self.populations = populations
@@ -185,6 +186,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                      10 * 60)  # wait 0-10 minutes, try to not stress webservice
         self.config["num_relax_individual"] = config.get("num_relax_individual", 10)
         self.config["dynamic_concurrent_scoring"] = config.get("dynamic_concurrent_scoring", False)
+        self.config["mismatch_tolerance"] = config.get("mismatch_tolerance", 1)
+        self.config["nearby_partner_tolerance"] = config.get("nearby_partner_tolerance", 1)
+        self.config["do_contact_score_mod"] = config.get("do_contact_score_mod", False)
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
@@ -387,11 +391,13 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             "dG_separated")
         best_rosetta_score = scores["dG_separated"]
 
+        # ORIGINAL CONTACT CHECKING
         score_modifications = []
-        if len(self.contact_dict) != 0:
+        contact_penalty = 0.95
+        if self.config["do_contact_score_mod"]:
             logging.debug("Doing score modification based on original contacts / interactions")
             best_renum = PDBtool.match_number(os.path.join(complex_pdb.parent, "best_complex.pdb"),
-                                              "".join(PDBtool.get_chains(self.vsp)),
+                                              "".join(cm().get("vsp_chain")),
                                               self.ref)
             # Get binding energy
             score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "reb_score.sc")
@@ -401,23 +407,24 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                     "-out:file:silent": score_path,
                                                 })
             interactions = RosettaWrapper.REBprocessor.process_multipose(score_path)
-            mismatch_tolerance = 0
+
             # Every inter-residue interaction that doesn't appear for the corresponding residue in the new candidate
             # that exceeds the tolerance (# of mismatches) incurs a 5% score penalty
             for i in range(len(self.orig_pep_contacts)):
-                new_partners = [partner[0] for partner in interactions[i].partners if
-                                partner[0][-1] == PDBtool.get_chains(self.vsp)[0]]
+                new_partners = [int(partner[0][:-1]) for partner in interactions[i].partners if
+                                partner[0][-1] == cm().get("vsp_chain")]
                 ref_partners = self.contact_dict[i]
                 mismatch_count = 0
-                logging.debug(f"Doing residue {i+1} with partners {pprint.pformat(new_partners, compact=True)}. "
+                logging.debug(f"Doing residue {i + 1} with partners {pprint.pformat(new_partners, compact=True)}. "
                               f"Original: {pprint.pformat(ref_partners, compact=True)}")
                 for partner in ref_partners:
-                    if partner not in new_partners:
+                    if not any([(abs(partner - pnew) <= self.config["nearby_partner_tolerance"]) for pnew in
+                                new_partners]):
                         mismatch_count += 1
                         logging.debug(f"Original partner {partner} didn't persist, mismatch count: {mismatch_count}")
-                        if mismatch_count > mismatch_tolerance:
-                            logging.debug(f"Exceeded mismatch tolerance ({mismatch_tolerance})")
-                            score_modifications.append((operator.mul, 0.95))
+                        if mismatch_count > self.config["mismatch_tolerance"]:
+                            logging.debug(f"Exceeded mismatch tolerance ({self.config['mismatch_tolerance']})")
+                            score_modifications.append((operator.mul, contact_penalty))
                             break
 
         # Calculate SCII
@@ -437,8 +444,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             logging.debug(f"Current score: {final_score}, applying {mod[0]} with {mod[1]}")
             final_score = mod[0](final_score, mod[1])
 
-        tup = (peptide, {"total": best_rosetta_score * bonus, "rosetta_score": best_rosetta_score,
-                         "SCII": scii, "calc_scii_bonus": bonus})
+        tup = (peptide, {"total": final_score, "rosetta_score": best_rosetta_score,
+                         "SCII": scii, "calc_scii_bonus": bonus,
+                         "contact_penalty": (max(0, len(score_modifications) - 1), contact_penalty)})
 
         logging.debug(
             f"Scoring {peptide} (score {tup[1]['total']}) took {(time.time() - start) / 60:.1f} minutes!")
