@@ -45,7 +45,7 @@ class _SelectionStrategies:
             linker = "GG"  # default is polyglycine (2)
         first = True
         new_nlist = []
-        increase_num = 0
+        increase_orig_num = 0
         for n, node in enumerate(nlist):
             if first:
                 new_nlist.append(REBprocessor.Node(amino_acid=node.amino_acid,
@@ -58,9 +58,9 @@ class _SelectionStrategies:
                 continue
             interres = abs(node.residue_id - new_nlist[-1].residue_id)
             if interres > 1:  # Jump in the sequence, need linker
-                # subtract gap length from the offset we have to add to the following residue ids, since the following
-                # ids are already increased by the gap length
-                increase_num -= max(0, interres - 1)
+                # Reduce the original residue offset by the length of the gap, since all following original residues
+                # will have their id increased by at least the length of the gap
+                increase_orig_num = max(0, increase_orig_num - interres)
                 # Number of elements to use from linker (usually it's all of them)
                 use_num = len(linker)
                 if interres - 1 < len(linker):
@@ -71,7 +71,22 @@ class _SelectionStrategies:
                     if policy == "TRUNCATE":
                         use_num = interres - 1
                     elif policy == "IGNORE":
-                        pass
+                        # If we're inserting the full length linker anyway, we have to increase the following residue
+                        # ids accordingly
+                        increase_orig_num += use_num
+                    elif policy == "SKIP":
+                        # Don't add linker
+                        # Copy over original node with (potentially) adjusted residue id
+                        add_node = REBprocessor.Node(amino_acid=node.amino_acid,
+                                                     residue_id=node.residue_id + increase_orig_num,
+                                                     chain=node.chain,
+                                                     partners=node.partners,
+                                                     strength=node.strength,
+                                                     neighbor_prev=new_nlist[-1],
+                                                     orig_res_id=node.orig_res_id)
+                        new_nlist[-1].neighbor_next = add_node
+                        new_nlist.append(add_node)
+                        continue
                     else:  # Default case: TRUNCATE
                         use_num = interres - 1
                 base_id = new_nlist[-1].residue_id
@@ -80,13 +95,19 @@ class _SelectionStrategies:
                 # (Doesn't check for future linkers, but they will be considered once they are encountered)
                 if respect_length_limit and len(new_nlist) + len(linker) + len(nlist[n:]) >= cm().get(
                         "peptide_generator.max_length"):
-                    raise IndexError("Cannot insert linker, because it would make the peptide length exceed the limit.")
+                    logging.warning(f"Cannot insert linker, because it would make the peptide length exceed the limit. "
+                                    f"Returning early with {new_nlist}")
+                    return new_nlist
 
-                for lnum, element in enumerate(linker):  # Add linkers
-                    if lnum == use_num:  # stop early, because of truncate limit
+                for lnum, element in enumerate(linker, start=1):  # Add linkers
+                    if lnum > use_num:  # stop early, because of truncate limit
                         break
-                    increase_num += 1
-                    linker_id = base_id + increase_num
+
+                    # For every linker we add that is situated within the gap and not displacing an original residue,
+                    # reduce the number we need to add to the following residues by 1
+                    if lnum < interres - 1:
+                        increase_orig_num = max(0, increase_orig_num - 1)
+                    linker_id = base_id + lnum
                     linker_node = REBprocessor.Node(amino_acid=PDBtool.one_to_three(element),
                                                     residue_id=linker_id,
                                                     chain=new_nlist[-1].chain,
@@ -100,9 +121,9 @@ class _SelectionStrategies:
                 node.neighbor_prev = new_nlist[-1]
                 new_nlist.append(node)
             else:
-                # Copy over original nore with (potentially) adjusted residue id
+                # Copy over original node with (potentially) adjusted residue id
                 add_node = REBprocessor.Node(amino_acid=node.amino_acid,
-                                             residue_id=node.residue_id + increase_num,
+                                             residue_id=node.residue_id + increase_orig_num,
                                              chain=node.chain,
                                              partners=node.partners,
                                              strength=node.strength,
