@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
 import logging
 import pprint
 import sys
 from abc import abstractmethod, ABCMeta
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from math import sqrt
 from typing import List, final, Type, Tuple
 
@@ -508,6 +507,7 @@ class _SelectionStrategies:
                 allowdist = len(self.linker) * self.linker_stretch_factor
 
                 def grow(fragment_list: List, curr_combination: List, combination_list: List):
+                    # TODO: Maybe use set instead of list for combination list so that duplicates get discarded?
                     # Get best possible n terminus extension of current fragment combination
                     n_partners = [f for f in fragment_list if f not in curr_combination and f != curr_combination[0]
                                   and euclidean(curr_combination[0].n_ter_cacoords, f.c_ter_cacoords) <= allowdist]
@@ -556,7 +556,7 @@ class _SelectionStrategies:
                             use_frag = self._Fragment(
                                 n_ter_resid=subset[0].residue_id,
                                 n_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[0]),
-                                c_ter_resid=subset[-1],
+                                c_ter_resid=subset[-1].residue_id,
                                 c_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[-1]),
                                 nlist=subset,
                                 score=sum([_.strength.get(to_chain, 0) for _ in subset])
@@ -576,7 +576,7 @@ class _SelectionStrategies:
                             use_frag = self._Fragment(
                                 n_ter_resid=subset[0].residue_id,
                                 n_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[0]),
-                                c_ter_resid=subset[-1],
+                                c_ter_resid=subset[-1].residue_id,
                                 c_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[-1]),
                                 nlist=subset,
                                 score=sum([_.strength.get(to_chain, 0) for _ in subset])
