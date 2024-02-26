@@ -444,6 +444,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             logging.debug(f"Current score: {final_score}, applying {mod[0]} with {mod[1]}")
             final_score = mod[0](final_score, mod[1])
 
+        with open(os.path.join(complex_pdb.parent, "SCORE"), "w+") as out:
+            out.write(str(final_score))
+
         tup = (peptide, {"total": final_score, "rosetta_score": best_rosetta_score,
                          "SCII": scii, "calc_scii_bonus": bonus,
                          "contact_penalty": (max(0, len(score_modifications) - 1), contact_penalty)})
