@@ -107,7 +107,7 @@ def make_file(path: Union[str, Path, List[Union[str, Path]]], content: str, dry_
     fname = ""
     if p[-1].is_dir():
         if cm().get("permissive"):
-            fname = str(uuid.uuid4())
+            p.append(str(uuid.uuid4()))
             logging.warning(f"The passed path '{p}' is a directory! Using '{fname}' as filename.")
         else:
             logging.error(f"The path '{p}' leads to a directory! Can only write to a file!")
@@ -115,7 +115,7 @@ def make_file(path: Union[str, Path, List[Union[str, Path]]], content: str, dry_
     use_path = os.path.normpath(cm().get("results_path"))
     for elem in p:
         use_path = os.path.join(use_path, elem)
-    use_path = Path(os.path.normpath(use_path))
+    use_path = os.path.normpath(use_path)
     os.makedirs(use_path.parents[0], exist_ok=True)
     if not dry_run:
         with open(use_path, "w") as f:
