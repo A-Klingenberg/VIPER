@@ -142,6 +142,7 @@ class _SelectionStrategies:
             self.max_length = cm().get("peptide_generator.max_length")
             self.reb_energy_cutoff = cm().get("peptide_generator.reb_energy_cutoff")
             self.linker = cm().get("peptide_generator.linker")
+            self.linking_force_length_limit = cm().get("peptide_generator.linking_force_length_limit")
             if self.reb_energy_cutoff > 0:
                 logging.warning(f"You have set a positive energy cutoff ({self.reb_energy_cutoff}) "
                                 f"- did you mean a negative value (attraction)?")
@@ -312,7 +313,7 @@ class _SelectionStrategies:
             for residue in sorted(elligible_nodes, key=lambda node: node.strength[to_chain], reverse=False):
                 _include(final_residues, residue)
             return _SelectionStrategies.add_linkers(
-                sorted(final_residues, key=lambda node: node.residue_id, reverse=False))
+                sorted(final_residues, key=lambda node: node.residue_id, reverse=False), self.linking_force_length_limit)
 
     @final
     class FragmentJoiner(SelectionStrategy):
@@ -648,7 +649,7 @@ class _SelectionStrategies:
 
             logging.debug(f"Final joined peptide fragments are: {pprint.pformat(final_peptide, compact=True)}")
             return _SelectionStrategies.add_linkers(
-                sorted(final_peptide, key=lambda node: node.residue_id, reverse=False))
+                sorted(final_peptide, key=lambda node: node.residue_id, reverse=False), self.linking_force_length_limit)
 
     @staticmethod
     def get_strategy(strategy: str = None) -> Type[_SelectionStrategies.SelectionStrategy]:
