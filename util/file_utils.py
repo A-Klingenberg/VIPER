@@ -115,7 +115,7 @@ def make_file(path: Union[str, Path, List[Union[str, Path]]], content: str, dry_
     use_path = os.path.normpath(cm().get("results_path"))
     for elem in p:
         use_path = os.path.join(use_path, elem)
-    use_path = os.path.normpath(use_path)
+    use_path = Path(os.path.normpath(use_path))
     os.makedirs(use_path.parents[0], exist_ok=True)
     if not dry_run:
         with open(use_path, "w") as f:
