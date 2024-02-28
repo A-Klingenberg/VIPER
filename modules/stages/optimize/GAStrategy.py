@@ -506,7 +506,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                     individual in pop if individual not in self.score_repo]):
                             self.score_repo[result[0]] = result[1]
                 # We can now be sure that we have scores for every individual in this population
-                families = []
+                children = []
                 parents = self._select(pop)
                 # Since we need to pair up parents, check for even number of parents. If the number of parents is odd,
                 # duplicate the first entry and append it.
@@ -515,20 +515,24 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 parents_paired = [(parents[i], parents[i + 1]) for i in range(0, len(parents), 2)]
                 for p1, p2 in parents_paired:
                     offspring = self._crossover(p1, p2)
+                    safety_counter = 0
                     while offspring == p1 or offspring == p2:
+                        if safety_counter > 50:  # Safety in case p1 == p2
+                            break
+                        safety_counter += 1
                         offspring = self._crossover(p1, p2)
-                    if offspring not in families:
-                        families.append(offspring)
+                    if offspring not in children:
+                        children.append(offspring)
                 finalists = []
-                for member in families:
-                    finalists.append(self._mutate(member))
-                # Pad to previous length with mutants of randomly chosen offspring of this generation
-                while len(finalists) < old_num - len(parents):
-                    candidate = self._mutate(random.choice(families))
-                    if candidate not in finalists:
-                        finalists.append(candidate)
+                for member in children:
+                    finalists.append(member)
                 for p in parents:
                     finalists.append(p)
+                # Pad to previous length with mutants of randomly chosen members of the last population
+                while len(finalists) < old_num:
+                    candidate = self._mutate(random.choice(pop))
+                    if candidate not in finalists:
+                        finalists.append(candidate)
                 curr_best = min({i: self.score_repo[i]['total'] for i in pop}.items(), key=lambda t: t[1])
                 logging.info(
                     f"Generation {self.generation}, best candidate: {curr_best[0]} ({curr_best[1]})")
