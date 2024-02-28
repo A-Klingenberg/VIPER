@@ -510,9 +510,9 @@ class REBprocessor:
 
             :param n: The start node from which to gather the relative neighbors
             :param length: How many neighbors (inclusive) to get. I.e. "2" would give n + two neighbors
-            :param direction: In which direction to look for neighbors. 0_old looks in both directions (increasing and
-                decreasing residue id), direction < 0_old only considers neighbors with a smaller residue id,
-                whereas direction > 0_old only considers residues with a higher residue id
+            :param direction: In which direction to look for neighbors. 0 looks in both directions (increasing and
+                decreasing residue id), direction < 0 only considers neighbors with a smaller residue id,
+                whereas direction > 0 only considers residues with a higher residue id
             :param curr_depth:
             :return:
             """

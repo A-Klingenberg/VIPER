@@ -591,7 +591,7 @@ def superimpose_multiple(pdb: str, ref_pdb: str, target_order: str, ref_order: s
             last_count = 0
             for target_res in target_chain:
                 if target_res.get_resname() != "HOH" and 'CA' in target_res:
-                    if first_in_chain:  # If chain doesn't start count at position 0_old
+                    if first_in_chain:  # If chain doesn't start count at position 0
                         offset = target_res.get_id()[1]
                         start = start_pos['target'][chain][0] + offset
                         end = start_pos['target'][chain][1] + offset
@@ -1027,7 +1027,7 @@ def rmsd(pdb: str, ref_pdb: str, target_order: str, ref_order: str, ca: bool = F
     for position in range(len(target_order)):
         # run alignment
         temp_align = aligner.align(target_aa[target_order[position]], ref_aa[ref_order[position]])
-        # Collect info needed - start and end positions of alignments ex. [0_old, 101]
+        # Collect info needed - start and end positions of alignments ex. [0, 101]
         target_chain_info = [temp_align[0].path[0][0], temp_align[0].path[1][0]]
         ref_chain_info = [temp_align[0].path[0][1], temp_align[0].path[1][1]]
         # Collect XYZ cords. for target
@@ -1548,7 +1548,7 @@ def get_centroid(pdb: Union[str, Path], residues: List[Union[REBprocessor.Node, 
         ids.append(residues)
     if len(ids) == 0:
         if cm().get("permissive"):
-            logging.warning(f"Couldn't determine any valid residue ids! Returning (0_old, 0_old, 0_old)...")
+            logging.warning(f"Couldn't determine any valid residue ids! Returning (0, 0, 0)...")
             return 0.0, 0.0, 0.0
         else:
             logging.error(f"Couldn't determine any valid residue ids! Aborting...")
@@ -1574,7 +1574,7 @@ def get_centroid(pdb: Union[str, Path], residues: List[Union[REBprocessor.Node, 
         return posx / len(residue_pos), posy / len(residue_pos), posz / len(residue_pos)
     else:
         # TODO: Just avg residue position * normed strength instead of nudging routine?
-        #  i. e.: ( (0_old.1 * xyz_1 + 0_old.4 * xyz_2 + 0_old.2 * xyz_3 + ...) / num_res )
+        #  i. e.: ( (0.1 * xyz_1 + 0.4 * xyz_2 + 0.2 * xyz_3 + ...) / num_res )
         # Normalize values
         min_strength_attractive = 10000.0
         min_strength_repulsive = 10000.0

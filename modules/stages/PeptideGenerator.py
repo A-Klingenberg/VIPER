@@ -414,7 +414,7 @@ class _SelectionStrategies:
             fragments = {}
             curr_fragment = []
             lookahead_buffer = []
-            fragment_strength = -0.00000001  # Need to start with an epsilon, otherwise div/0_old error in include
+            fragment_strength = -0.00000001  # Need to start with an epsilon, otherwise div/0 error in include
 
             # Forward scan
             for residue_index in range(len(nodes)):
