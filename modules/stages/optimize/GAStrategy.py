@@ -275,7 +275,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             # Return whole population
             return [ind for ind, _ in ordered]
 
-    def crossover(self, parent1, parent2):
+    def crossover(self, parent1: str, parent2: str) -> str:
         """
         Apply the crossover operation to the two parents and returns the new individual. Assumes the genome is a str of
         amino acids in single letter notation.
@@ -304,7 +304,20 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             crossover_point = random.randrange(max(len(parent1), len(parent2)))
             offspring += parent1[:crossover_point]
             offspring += parent2[crossover_point:]
-        return offspring
+        result = ""
+        for elem in offspring:
+            if isinstance(elem, str):
+                result += elem
+            elif isinstance(elem, list):
+                for e in elem:
+                    if not isinstance(e, str):
+                        logging.error(f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
+                        raise ValueError(f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
+                    result += e
+            else:
+                logging.error(f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
+                raise ValueError(f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
+        return result
 
     def mutate(self, individual):
         """
