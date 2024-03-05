@@ -481,7 +481,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 out.write(pprint.pformat(transfer_warnings))
 
         # Calculate SCII
-        scii = SCII.scii_for_pdb(peptide_pdb, radius=self.config["score_scii_radius"])
+        scii = SCII.scii_for_pdb(peptide_pdb, radius=self.config["scii_score_radius"])
         bonus = 1
         if self.config["scii_do_score_mod"]:
             bonus = self.config["scii_score_func"](scii)
