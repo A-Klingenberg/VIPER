@@ -101,7 +101,7 @@
         "adjust_score": true,
         "radius": 7,
         "threshold": 0.42,
-        "stepping_width": 0.1,
+        "stepping_width": 0.05,
         "bonus": 0.05,
         "custom_func": false
       },
