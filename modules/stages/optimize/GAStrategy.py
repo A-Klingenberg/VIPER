@@ -188,6 +188,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.config["select_percent"] = config.get("select_percent", cm().get("optimize.ga.select_percent", 0.3))
         self.config["selection_mode"] = config.get("selection_mode",
                                                    cm().get("optimize.ga.selection_mode", "ROULETTEWHEEL"))
+        self.config["selection_with_replacement"] = config.get("selection_with_replacement",
+                                                               cm().get("optimize.ga.selection_with_replacement", True))
         self.config["crossover_mode"] = config.get("crossover_mode", cm().get("optimize.ga.crossover_mode", "MULTIPLE"))
         self.config["crossover_chance"] = config.get("crossover_chance", cm().get("optimize.ga.crossover_change", 0.1))
         self.config["mutation_rate"] = config.get("mutation_rate", cm().get("optimize.ga.mutation_rate", 0.05))
@@ -259,7 +261,10 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         lookup = {individual: self.score_repo.get(individual, self._score_func(individual))["total"] for individual in
                   population}
         if self.config["selection_mode"] == "UNIFORM":
-            return random.sample(list(lookup.keys()), k=take_num)
+            if self.config["selection_with_replacement"]:
+                return random.choices(list(lookup.keys()), k=take_num)
+            else:
+                return random.sample(list(lookup.keys()), k=take_num)
         # Order by fitness
         if self.metric == "MIN":
             ordered = sorted(lookup.items(), key=lambda tup: tup[1])
@@ -272,17 +277,19 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         if self.config["selection_mode"] == "BESTONLY":
             return [ind for ind, _ in ordered[:take_num]]
         if self.config["selection_mode"] == "ROULETTEWHEEL":
-            # This isn't great, as the sum grows large we might reach the floating point precision limit
-            # At least this way we can sample without replacement
-            s = sum(lookup.values())
-            ordered = sorted({k: max(v / s, 0) for k, v in lookup.items()}.items(), key=lambda tup: tup[1])
-            indices = np.random.choice(range(len(ordered)), size=take_num, replace=False, p=[fit for _, fit in ordered])
-            choices = []
-            individual_list = [ind for ind, _ in ordered]
-            for i in indices:
-                choices.append(individual_list[i])
-            return choices
-            # return random.choices([ind for ind, _ in ordered], weights=[abs(fit) for _, fit in ordered], k=take_num)
+            if self.config["selection_with_replacement"]:
+                return random.choices([ind for ind, _ in ordered], weights=[abs(fit) for _, fit in ordered], k=take_num)
+            else:
+                # TODO: This isn't great, as the sum grows large we might reach the floating point precision limit
+                #  At least this way we can sample without replacement
+                s = sum(lookup.values())
+                ordered = sorted({k: max(v / s, 0) for k, v in lookup.items()}.items(), key=lambda tup: tup[1])
+                indices = np.random.choice(range(len(ordered)), size=take_num, replace=False, p=[fit for _, fit in ordered])
+                choices = []
+                individual_list = [ind for ind, _ in ordered]
+                for i in indices:
+                    choices.append(individual_list[i])
+                return choices
         else:
             # Return whole population
             return [ind for ind, _ in ordered]
@@ -600,7 +607,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                     offspring = self._crossover(p1, p2)
                     safety_counter = 0
                     while offspring == p1 or offspring == p2:
-                        if safety_counter > 50:  # Safety in case p1 == p2
+                        if safety_counter > 10:  # Safety in case p1 == p2
                             break
                         safety_counter += 1
                         offspring = self._crossover(p1, p2)

@@ -82,6 +82,7 @@
     "ga": {
       "select_percent": 0.3,
       "selection_mode": "ROULETTEWHEEL",
+      "selection_with_replacement": true,
       "crossover_mode": "MULTIPLE",
       "crossover_chance": 0.1,
       "mutation_rate": 0.05,
