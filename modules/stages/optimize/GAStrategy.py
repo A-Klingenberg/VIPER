@@ -204,19 +204,19 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                          cm().get("optimize.ga.contact_checking.emit_warning", True))
         self.config["scii_do_score_mod"] = config.get("scii_do_score_mod",
                                                       cm().get("optimize.ga.scii.adjust_score", True))
-        self.config["score_scii_radius"] = config.get("score_scii_radius", cm().get("optimize.ga.scii.radius", 7))
-        self.config["score_scii_threshold"] = config.get("score_scii_threshold",
+        self.config["scii_score_radius"] = config.get("score_scii_radius", cm().get("optimize.ga.scii.radius", 7))
+        self.config["scii_score_threshold"] = config.get("score_scii_threshold",
                                                          cm().get("optimize.ga.scii.threshold", 0.42))
-        self.config["score_scii_stepping_width"] = config.get("score_scii_stepping_width",
+        self.config["scii_score_stepping_width"] = config.get("score_scii_stepping_width",
                                                               cm().get("optimize.ga.scii.stepping_width", 0.1))
-        self.config["score_scii_bonus"] = config.get("score_scii_bonus", cm().get("optimize.ga.scii.bonus", 0.05))
-        if _ := config.get("score_scii_func", False):
-            self.config["score_scii_func"] = _
+        self.config["scii_score_bonus"] = config.get("score_scii_bonus", cm().get("optimize.ga.scii.bonus", 0.05))
+        if _ := config.get("scii_score_func", False):
+            self.config["scii_score_func"] = _
         elif cm().get("optimize.ga.scii.custom_func"):
             from custom_funcs import custom_scii
-            self.config["score_scii_func"] = custom_scii
+            self.config["scii_score_func"] = custom_scii
         else:
-            self.config["score_scii_func"] = self._scii
+            self.config["scii_score_func"] = self._scii
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
