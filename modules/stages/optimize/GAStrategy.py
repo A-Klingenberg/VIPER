@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from typing import List, Callable, Union, Tuple, Any
 
+import numpy as np
+
 import ConfigManager
 from modules.wrappers import RosettaWrapper
 from modules.wrappers.PEPstrMODWrapper import PEPstrMODWrapper
@@ -257,7 +259,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         lookup = {individual: self.score_repo.get(individual, self._score_func(individual))["total"] for individual in
                   population}
         if self.config["selection_mode"] == "UNIFORM":
-            return random.choices(list(lookup.keys()), k=take_num)
+            return random.sample(list(lookup.keys()), k=take_num)
         # Order by fitness
         if self.metric == "MIN":
             ordered = sorted(lookup.items(), key=lambda tup: tup[1])
@@ -270,7 +272,17 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         if self.config["selection_mode"] == "BESTONLY":
             return [ind for ind, _ in ordered[:take_num]]
         if self.config["selection_mode"] == "ROULETTEWHEEL":
-            return random.choices([ind for ind, _ in ordered], weights=[abs(fit) for _, fit in ordered], k=take_num)
+            # This isn't great, as the sum grows large we might reach the floating point precision limit
+            # At least this way we can sample without replacement
+            s = sum(lookup.values())
+            ordered = sorted({k: max(v / s, 0) for k, v in lookup.items()}.items(), key=lambda tup: tup[1])
+            indices = np.random.choice(range(len(ordered)), size=take_num, replace=False, p=[fit for _, fit in ordered])
+            choices = []
+            individual_list = [ind for ind, _ in ordered]
+            for i in indices:
+                choices.append(individual_list[i])
+            return choices
+            # return random.choices([ind for ind, _ in ordered], weights=[abs(fit) for _, fit in ordered], k=take_num)
         else:
             # Return whole population
             return [ind for ind, _ in ordered]
