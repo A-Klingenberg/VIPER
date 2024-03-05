@@ -93,7 +93,15 @@ class Population:
 
         :return: A str representation of the population
         """
-        return f"[{', '.join(self.individuals)}" + "]"
+        strs = []
+        for i in self.individuals:
+            if isinstance(i, str):
+                strs.append(i)
+            elif isinstance(i, list):
+                strs.append("".join([str(_) for _ in i]))
+            else:
+                strs.append(str(i))
+        return f"[{', '.join(strs)}" + "]"
 
     def __repr__(self):
         return self.__str__()
@@ -213,8 +221,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         if _ := config.get("scii_score_func", False):
             self.config["scii_score_func"] = _
         elif cm().get("optimize.ga.scii.custom_func"):
-            from custom_funcs import custom_scii
-            self.config["scii_score_func"] = custom_scii
+            from custom_funcs import custom_scii_bonus
+            self.config["scii_score_func"] = custom_scii_bonus
         else:
             self.config["scii_score_func"] = self._scii
         self.score_repo = {}

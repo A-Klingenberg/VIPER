@@ -36,5 +36,5 @@ def addin_mutate(ga: modules.stages.optimize.GAStrategy.GAStrategy,
     return NotImplemented
 
 
-def custom_scii(scii: float) -> float:
+def custom_scii_bonus(scii: float) -> float:
     return NotImplemented
