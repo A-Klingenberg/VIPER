@@ -175,20 +175,48 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self._crossover = crossover if crossover is not None else self.crossover
         self._mutate = mutate if mutate is not None else self.mutate
         self.config = config if config is not None else {}
-        self.config["select_percent"] = config.get("select_percent", 0.3)
-        self.config["selection_mode"] = config.get("selection_mode", "ROULETTEWHEEL")
-        self.config["crossover_mode"] = config.get("crossover_mode", "MULTIPLE")
-        self.config["crossover_chance"] = config.get("crossover_chance", 0.1)
-        self.config["mutation_rate"] = config.get("mutation_rate", 0.05)
-        self.config["mutation_bias"] = config.get("mutation_bias", submat.UNIFORM)
-        self.config["num_generations"] = config.get("num_generations", 5)
-        self.config["getstruc_backoff"] = config.get("getstruc_backoff",
-                                                     10 * 60)  # wait 0-10 minutes, try to not stress webservice
-        self.config["num_relax_individual"] = config.get("num_relax_individual", 10)
-        self.config["dynamic_concurrent_scoring"] = config.get("dynamic_concurrent_scoring", False)
-        self.config["mismatch_tolerance"] = config.get("mismatch_tolerance", 1)
-        self.config["nearby_partner_tolerance"] = config.get("nearby_partner_tolerance", 1)
-        self.config["do_contact_score_mod"] = config.get("do_contact_score_mod", False)
+        self.config["select_percent"] = config.get("select_percent", cm().get("optimize.ga.select_percent", 0.3))
+        self.config["selection_mode"] = config.get("selection_mode",
+                                                   cm().get("optimize.ga.selection_mode", "ROULETTEWHEEL"))
+        self.config["crossover_mode"] = config.get("crossover_mode", cm().get("optimize.ga.crossover_mode", "MULTIPLE"))
+        self.config["crossover_chance"] = config.get("crossover_chance", cm().get("optimize.ga.crossover_change", 0.1))
+        self.config["mutation_rate"] = config.get("mutation_rate", cm().get("optimize.ga.mutation_rate", 0.05))
+        self.config["mutation_bias"] = config.get("mutation_bias", submat.SubMat(
+            cm().get("optimize.ga.mutation_bias", "BLOSUM62_shifted.json")))
+        self.config["num_generations"] = config.get("num_generations", cm().get("optimize.ga.num_generations", 5))
+        self.config["getstruc_backoff"] = config.get("getstruc_backoff", cm().get("optimize.ga.getstruc_backoff",
+                                                                                  10 * 60))  # wait 0-10 minutes, try to not stress webservice
+        self.config["num_relax_individual"] = config.get("num_relax_individual",
+                                                         cm().get("optimize.ga.num_relax_individual", 10))
+        self.config["dynamic_concurrent_scoring"] = config.get("dynamic_concurrent_scoring",
+                                                               cm().get("optimize.ga.dynamic_concurrent_scoring",
+                                                                        False))
+        self.config["mismatch_tolerance"] = config.get("mismatch_tolerance",
+                                                       cm().get("optimize.ga.contact_checking.mismatch_tolerance", 2))
+        self.config["nearby_partner_tolerance"] = config.get("nearby_partner_tolerance",
+                                                             cm().get("optimize.ga.contact_checking.partner_tolerance",
+                                                                      1))
+        self.config["do_contact_score_mod"] = config.get("do_contact_score_mod",
+                                                         cm().get("optimize.ga.contact_checking.adjust_score", False))
+        self.config["contact_penalty"] = 1 - config.get("contact_penalty",
+                                                        cm().get("optimize.ga.contact_checking.penalty", 0.02))
+        self.config["contact_emit_warning"] = config.get("contact_emit_warning",
+                                                         cm().get("optimize.ga.contact_checking.emit_warning", True))
+        self.config["scii_do_score_mod"] = config.get("scii_do_score_mod",
+                                                      cm().get("optimize.ga.scii.adjust_score", True))
+        self.config["score_scii_radius"] = config.get("score_scii_radius", cm().get("optimize.ga.scii.radius", 7))
+        self.config["score_scii_threshold"] = config.get("score_scii_threshold",
+                                                         cm().get("optimize.ga.scii.threshold", 0.42))
+        self.config["score_scii_stepping_width"] = config.get("score_scii_stepping_width",
+                                                              cm().get("optimize.ga.scii.stepping_width", 0.1))
+        self.config["score_scii_bonus"] = config.get("score_scii_bonus", cm().get("optimize.ga.scii.bonus", 0.05))
+        if _ := config.get("score_scii_func", False):
+            self.config["score_scii_func"] = _
+        elif cm().get("optimize.ga.scii.custom_func"):
+            from custom_funcs import custom_scii
+            self.config["score_scii_func"] = custom_scii
+        else:
+            self.config["score_scii_func"] = self._scii
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
@@ -318,6 +346,18 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         del temp_dict["ref_reb"]  # same reasoning here
         return temp_dict
 
+    def _scii(self, scii: float) -> float:
+        """
+        Returns a percentage based bonus for the given value. The bonus is calculated by considering the distance of the
+        value to a threshold and giving a set bonus for each multiple of a set distance that it is away.
+        This is parameterized by the config setting, the theshold, the score bonus, and the distance can be configured.
+
+        :param scii: The SCII value to derive a bonus from
+        :return: A percentage based bonus
+        """
+        return (round((scii - self.config["scii_score_threshold"]) * (0.1 / self.config["scii_score_stepping_width"]),
+                      1) * 10 * self.config["scii_score_bonus"] + 1)
+
     def score(self, peptide: str, shared_dict=None, base_log_path: Union[Path, str] = None,
               verbosity: bool = False) -> Tuple[Any, dict]:
         """
@@ -391,51 +431,61 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             "dG_separated")
         best_rosetta_score = scores["dG_separated"]
 
-        # ORIGINAL CONTACT CHECKING
         score_modifications = []
-        contact_penalty = 0.95
-        if self.config["do_contact_score_mod"]:
-            logging.debug("Doing score modification based on original contacts / interactions")
-            best_renum = PDBtool.match_number(os.path.join(complex_pdb.parent, "best_complex.pdb"),
-                                              "".join(cm().get("vsp_chain")),
-                                              self.ref)
-            # Get binding energy
-            score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "reb_score.sc")
-            RosettaWrapper.RosettaWrapper().run(RosettaWrapper.Flags().residue_energy_breakdown, flag_suffix=peptide,
-                                                options={
-                                                    "-in:file:s": best_renum,
-                                                    "-out:file:silent": score_path,
-                                                })
-            interactions = RosettaWrapper.REBprocessor.process_multipose(score_path)
 
-            # Every inter-residue interaction that doesn't appear for the corresponding residue in the new candidate
-            # that exceeds the tolerance (# of mismatches) incurs a 5% score penalty
-            for i in range(len(self.orig_pep_contacts)):
-                new_partners = [int(partner[0][:-1]) for partner in interactions[i].partners if
-                                partner[0][-1] == cm().get("vsp_chain")]
-                ref_partners = self.contact_dict[i]
-                mismatch_count = 0
-                logging.debug(f"Doing residue {i + 1} with partners {pprint.pformat(new_partners, compact=True)}. "
-                              f"Original: {pprint.pformat(ref_partners, compact=True)}")
-                for partner in ref_partners:
-                    if not any([(abs(partner - pnew) <= self.config["nearby_partner_tolerance"]) for pnew in
-                                new_partners]):
-                        mismatch_count += 1
-                        logging.debug(f"Original partner {partner} didn't persist, mismatch count: {mismatch_count}")
-                        if mismatch_count > self.config["mismatch_tolerance"]:
-                            logging.debug(f"Exceeded mismatch tolerance ({self.config['mismatch_tolerance']})")
-                            score_modifications.append((operator.mul, contact_penalty))
-                            break
+        # original contact checking
+        logging.debug("Doing score modification based on original contacts / interactions")
+        transfer_warnings = {}
+        best_renum = PDBtool.match_number(os.path.join(complex_pdb.parent, "best_complex.pdb"),
+                                          "".join(cm().get("vsp_chain")),
+                                          self.ref)
+        # Get binding energy
+        score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "reb_score.sc")
+        RosettaWrapper.RosettaWrapper().run(RosettaWrapper.Flags().residue_energy_breakdown, flag_suffix=peptide,
+                                            options={
+                                                "-in:file:s": best_renum,
+                                                "-out:file:silent": score_path,
+                                            })
+        interactions = RosettaWrapper.REBprocessor.process_multipose(score_path)
+
+        # Every inter-residue interaction that doesn't appear for the corresponding residue in the new candidate
+        # that exceeds the tolerance (# of mismatches) incurs a score penalty
+        for i in range(len(self.orig_pep_contacts)):
+            new_partners = [int(partner[0][:-1]) for partner in interactions[i].partners if
+                            partner[0][-1] == cm().get("vsp_chain")]
+            ref_partners = self.contact_dict[i]
+            mismatch_count = 0
+            logging.debug(f"Doing residue {i + 1} with partners {pprint.pformat(new_partners, compact=True)}. "
+                          f"Original: {pprint.pformat(ref_partners, compact=True)}")
+            mismatches = []
+            for partner in ref_partners:
+                if not any([(abs(partner - pnew) <= self.config["nearby_partner_tolerance"]) for pnew in
+                            new_partners]):
+                    mismatch_count += 1
+                    mismatches.append(partner)
+                    logging.debug(f"Original partner {partner} didn't persist, mismatch count: {mismatch_count}")
+                    if mismatch_count > self.config["mismatch_tolerance"]:
+                        logging.debug(f"Exceeded mismatch tolerance ({self.config['mismatch_tolerance']})")
+                        if self.config["do_contact_score_mod"]:
+                            score_modifications.append((operator.mul, self.config["contact_penalty"]))
+                        if self.config["contact_emit_warning"]:
+                            transfer_warnings[i + 1] = {}
+                            transfer_warnings[i + 1]["mismatch_count"] = mismatch_count
+                            transfer_warnings[i + 1]["partners_orig"] = ref_partners
+                            transfer_warnings[i + 1]["partners_new"] = new_partners
+                            transfer_warnings[i + 1]["mismatches"] = [r.__repr__() for r in mismatches]
+                        break
+
+        if len(transfer_warnings) > 0:
+            with open(os.path.join(complex_pdb.parent, "warnings.json"), "w") as out:
+                out.write(pprint.pformat(transfer_warnings))
 
         # Calculate SCII
         scii = SCII.scii_for_pdb(peptide_pdb, radius=self.config["score_scii_radius"])
-
-        # Calculate composite score
-        # Since 0.3 - 0.4 was the area of ambiguity stated in the original SCII paper, with larger values indicating
-        # more stable peptides and smaller values indicating less stable peptides
-        # Therefore a percentage based bonus or malus will be applied if the value is higher or lower thant 0.3 - 0.4
-        bonus = round((scii - 0.35), 1) * 0.5 + 1
-        score_modifications.append((operator.mul, bonus))
+        bonus = 1
+        if self.config["scii_do_score_mod"]:
+            bonus = self.config["scii_score_func"](scii)
+            score_modifications.append((operator.mul, bonus))
 
         final_score = best_rosetta_score
 
@@ -449,7 +499,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
 
         tup = (peptide, {"total": final_score, "rosetta_score": best_rosetta_score,
                          "SCII": scii, "calc_scii_bonus": bonus,
-                         "contact_penalty": (max(0, len(score_modifications) - 1), contact_penalty)})
+                         "contact_penalty": (max(0, len(score_modifications) - 1), self.config["contact_penalty"])})
 
         logging.debug(
             f"Scoring {peptide} (score {tup[1]['total']}) took {(time.time() - start) / 60:.1f} minutes!")
@@ -539,7 +589,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 pop.update(finalists)
                 if self._cust_addin_mutate:
                     import custom_funcs
-                    add_to = custom_funcs.addin(self, pop)
+                    add_to = custom_funcs.addin_mutate(self, pop)
                     for individual in add_to:
                         pop.individuals.append(individual)
                 logging.info(f"New pop [#{pop_count}] : {pop}")

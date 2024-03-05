@@ -77,5 +77,35 @@
     "download_trajectory": true,
     "do_energy_rms_graph": true,
     "wait_interval": 60
+  },
+  "optimize": {
+    "ga": {
+      "select_percent": 0.3,
+      "selection_mode": "ROULETTEWHEEL",
+      "crossover_mode": "MULTIPLE",
+      "crossover_chance": 0.1,
+      "mutation_rate": 0.05,
+      "mutation_bias": "BLOSUM62_shifted",
+      "num_generations": 5,
+      "getstruc_backoff": 600,
+      "num_relax_individual": 10,
+      "dynamic_concurrent_scoring": false,
+      "contact_checking": {
+        "adjust_score": false,
+        "emit_warning": true,
+        "mismatch_tolerance": 2,
+        "nearby_partner_tolerance": 1,
+        "penalty": 0.02
+      },
+      "scii": {
+        "adjust_score": true,
+        "radius": 7,
+        "threshold": 0.42,
+        "stepping_width": 0.1,
+        "bonus": 0.05,
+        "custom_func": false
+      },
+      "custom_addin_mutate": false
+    }
   }
 }

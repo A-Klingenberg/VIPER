@@ -31,6 +31,10 @@ class CustomSelectionStrategy(modules.stages.PeptideGenerator._SelectionStrategi
         return NotImplemented
 
 
-def addin(ga: modules.stages.optimize.GAStrategy.GAStrategy,
-          population: modules.stages.optimize.GAStrategy.Population) -> List:
+def addin_mutate(ga: modules.stages.optimize.GAStrategy.GAStrategy,
+                 population: modules.stages.optimize.GAStrategy.Population) -> List:
+    return NotImplemented
+
+
+def custom_scii(scii: float) -> float:
     return NotImplemented

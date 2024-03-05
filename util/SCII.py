@@ -767,8 +767,8 @@ def scii_for_res(res: str, partners: Union[str, List[str]]) -> float:
         string of one letter abbreviations or a list of abbreviations.
     :return: The index number / side chain interaction index for the given residue and its partners.
     """
-    r = PDBtool.one_to_three(res)
-    if r == " ":
+    r = PDBtool.one_to_three(res, "")
+    if r == "":
         logging.error(f"Could not recognize residue {res}!")
         raise ValueError(f"Could not recognize residue {res}!")
     aas = [PDBtool.one_to_three(aa, "") for aa in partners]
@@ -794,7 +794,7 @@ def scii_for_res(res: str, partners: Union[str, List[str]]) -> float:
     return statistics.mean([buf[aa]["index_number"] for aa in aas])
 
 
-def scii_for_pdb(path: Union[str, Path], chain: str = None, radius: float = 10.0, segment_size: int = False,
+def scii_for_pdb(path: Union[str, Path], chain: str = None, radius: float = 7.0, segment_size: int = False,
                  use_centroid: bool = False) -> Union[float, dict]:
     """
     Calculates the side chain interaction index for a given pdb by calculating the average SCII for each residue and
