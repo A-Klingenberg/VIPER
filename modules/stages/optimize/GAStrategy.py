@@ -284,7 +284,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 #  At least this way we can sample without replacement
                 s = sum(lookup.values())
                 ordered = sorted({k: max(v / s, 0) for k, v in lookup.items()}.items(), key=lambda tup: tup[1])
-                indices = np.random.choice(range(len(ordered)), size=take_num, replace=False, p=[fit for _, fit in ordered])
+                indices = np.random.choice(range(len(ordered)), size=take_num, replace=False,
+                                           p=[fit for _, fit in ordered])
                 choices = []
                 individual_list = [ind for ind, _ in ordered]
                 for i in indices:
@@ -330,12 +331,15 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             elif isinstance(elem, list):
                 for e in elem:
                     if not isinstance(e, str):
-                        logging.error(f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
-                        raise ValueError(f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
+                        logging.error(
+                            f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
+                        raise ValueError(
+                            f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
                     result += e
             else:
                 logging.error(f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
-                raise ValueError(f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
+                raise ValueError(
+                    f"Could not generate offspring for parents ({parent1}, {parent2}), result: {offspring}")
         return result
 
     def mutate(self, individual):
@@ -386,7 +390,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         del temp_dict["ref_reb"]  # same reasoning here
         return temp_dict
 
-    def _scii(self, scii: float) -> float:
+    def _scii(self, scii: float) -> Union[
+        Union[operator.mul, operator.add, operator.sub, operator.floordiv, operator.pow, operator.truediv], float]:
         """
         Returns a percentage based bonus for the given value. The bonus is calculated by considering the distance of the
         value to a threshold and giving a set bonus for each multiple of a set distance that it is away.
@@ -395,8 +400,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         :param scii: The SCII value to derive a bonus from
         :return: A percentage based bonus
         """
-        return (round((scii - self.config["scii_score_threshold"]) * (0.1 / self.config["scii_score_stepping_width"]),
-                      1) * 10 * self.config["scii_score_bonus"] + 1)
+        return operator.mul, round(
+            (scii - self.config["scii_score_threshold"]) * (0.1 / self.config["scii_score_stepping_width"]), 1) * 10 * \
+                             self.config["scii_score_bonus"] + 1
 
     def score(self, peptide: str, shared_dict=None, base_log_path: Union[Path, str] = None,
               verbosity: bool = False) -> Tuple[Any, dict]:
@@ -465,6 +471,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             "-in:file:s": False,
             "-s": os.path.join(complex_pdb.parent, "best_complex.pdb"),
             "-out:file:score_only": os.path.normpath(score_path),
+            "-interface": f"{PDBtool.get_chains(peptide_pdb)[0]}_{cm().get('vsp_chain', PDBtool.get_chains(complex_pdb)[1])}",
         })
         best_pdb, scores = RosettaWrapper.ScoreFileParser.get_extremum(
             os.path.normpath(score_path),
@@ -490,9 +497,10 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
 
         # Every inter-residue interaction that doesn't appear for the corresponding residue in the new candidate
         # that exceeds the tolerance (# of mismatches) incurs a score penalty
+        vsp_chain = cm().get("vsp_chain")
         for i in range(len(self.orig_pep_contacts)):
             new_partners = [int(partner[0][:-1]) for partner in interactions[i].partners if
-                            partner[0][-1] == cm().get("vsp_chain")]
+                            partner[0][-1] in vsp_chain]
             ref_partners = self.contact_dict[i]
             mismatch_count = 0
             logging.debug(f"Doing residue {i + 1} with partners {pprint.pformat(new_partners, compact=True)}. "
@@ -524,8 +532,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         scii = SCII.scii_for_pdb(peptide_pdb, radius=self.config["scii_score_radius"])
         bonus = 1
         if self.config["scii_do_score_mod"]:
-            bonus = self.config["scii_score_func"](scii)
-            score_modifications.append((operator.mul, bonus))
+            op, bonus = self.config["scii_score_func"](scii)
+            score_modifications.append((op, bonus))
 
         final_score = best_rosetta_score
 

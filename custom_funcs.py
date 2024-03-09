@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import operator
 import typing
-from typing import List
+from typing import List, Union
 
 if typing.TYPE_CHECKING:
     import modules.stages.PeptideGenerator
@@ -36,5 +37,5 @@ def addin_mutate(ga: modules.stages.optimize.GAStrategy.GAStrategy,
     return NotImplemented
 
 
-def custom_scii_bonus(scii: float) -> float:
+def custom_scii_bonus(scii: float) -> Union[Union[operator.mul, operator.add, operator.sub, operator.floordiv, operator.pow, operator.truediv], float]:
     return NotImplemented

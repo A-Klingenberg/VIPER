@@ -263,9 +263,11 @@ class _SelectionStrategies:
             self.custom_func = cm().get("peptide_generator.greedy_expand.custom_func")
 
         def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
-            if not from_chain == nodes[0].chain:
-                raise ValueError(
-                    "Chains have not been properly defined, list of nodes does not correspond to from_chain.")
+            if len(nodes) == 0:
+                logging.error("Passed an empty list of nodes!")
+                raise ValueError("Passed an empty list of nodes!")
+            if any(_.chain not in from_chain for _ in nodes):
+                logging.warning(f"There exist nodes in the passed nodes object that aren't on from_chain ({from_chain})!")
 
             def _include(add_to: list, n: REBprocessor.Node, curr_depth: int = 0) -> None:
                 if self.custom_func:
@@ -273,12 +275,12 @@ class _SelectionStrategies:
                     return custom_funcs.greedy_expand_node_inclusion(self, add_to, n, curr_depth)
                 if self.max_length == -1:
                     pass
-                elif len(add_to) > self.max_length or to_chain not in n.strength:
+                elif len(add_to) > self.max_length or n.strength_to(to_chain) >= 0:
                     return
                 if self.always_include_direct_neighbors and curr_depth == 1:
                     add_to.append(n)
                 damping_factor = self.damping_func(len(add_to)) if self.length_damping else 1
-                if (n.strength.get(to_chain, 10000000000) * damping_factor < self.reb_energy_cutoff
+                if (n.strength_to(to_chain) * damping_factor < self.reb_energy_cutoff
                         and curr_depth <= self.max_side_extension
                         or (self.always_include_direct_neighbors and curr_depth == 1)):
                     if n not in add_to:
@@ -292,8 +294,7 @@ class _SelectionStrategies:
                     if nx := n.neighbor_next:
                         nxt = nx
                     if prev and nxt:
-                        if (n.neighbor_prev.strength.get(to_chain, 10000000000) <
-                                n.neighbor_next.strength.get(to_chain, 10000000000)):
+                        if n.neighbor_prev.strength_to(to_chain) < n.neighbor_next.strength_to(to_chain):
                             _include(add_to, n.neighbor_prev, curr_depth + 1)
                             _include(add_to, n.neighbor_next, curr_depth + 1)
                         else:
@@ -305,15 +306,16 @@ class _SelectionStrategies:
                         _include(add_to, n.neighbor_next, curr_depth + 1)
 
             final_residues = []
-            elligible_nodes = [n for n in nodes if n.chain == from_chain and to_chain in n.strength]
+            elligible_nodes = [n for n in nodes if n.chain in from_chain and n.strength_to(to_chain) < 0]
             if len(elligible_nodes) == 0:
                 logging.warning(f"Couldn't determine any residues that interacted "
                                 f"significantly according to the specifications. Exiting...")
                 sys.exit(1)
-            for residue in sorted(elligible_nodes, key=lambda node: node.strength[to_chain], reverse=False):
+            for residue in sorted(elligible_nodes, key=lambda node: node.strength_to(to_chain), reverse=False):
                 _include(final_residues, residue)
             return _SelectionStrategies.add_linkers(
-                sorted(final_residues, key=lambda node: node.residue_id, reverse=False), self.linking_force_length_limit)
+                sorted(final_residues, key=lambda node: node.residue_id, reverse=False),
+                self.linking_force_length_limit)
 
     @final
     class FragmentJoiner(SelectionStrategy):
@@ -369,9 +371,9 @@ class _SelectionStrategies:
         def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
             if len(nodes) == 0:
                 raise ValueError("Passed an empty list of nodes!")
-            if not from_chain == nodes[0].chain:
-                raise ValueError(
-                    "Chains have not been properly defined, list of nodes does not correspond to from_chain.")
+            if any(_.chain not in from_chain for _ in nodes):
+                logging.warning(
+                    f"There exist nodes in the passed nodes object that aren't on from_chain ({from_chain})!")
             if self.ref_relax is None:
                 if _ := cm().get("ref_relax"):
                     self.ref_relax = _
@@ -387,11 +389,11 @@ class _SelectionStrategies:
                     return custom_funcs.fragment_joiner_node_inclusion(self, n, to_chain, curr_strength,
                                                                        add_to_strength,
                                                                        curr_length, ignore_cutoff, damping_factor)
-                if to_chain not in nodes[residue_index].strength:  # Residue does not interact with target chain
+                if not any(_ in to_chain for _ in nodes[residue_index].strength):  # Residue does not interact with target chain
                     return False
                 abs_criterion = False
                 rel_criterion = False
-                node_strength = n.strength.get(to_chain, 10000000000)
+                node_strength = n.strength_to(to_chain)
                 if node_strength == 0:  # Safety fallback, normally this shouldn't be encountered
                     node_strength = 0.00000001
                 if curr_strength == 0:  # Safety fallback, normally this shouldn't be encountered
@@ -428,7 +430,7 @@ class _SelectionStrategies:
                         break
                     if residue_index + i >= len(nodes):  # Don't lookahead past end of list
                         break
-                    if len(curr_fragment) == 0 and i == 0 and nodes[residue_index + i].strength.get(to_chain, 1) >= 0:
+                    if len(curr_fragment) == 0 and i == 0 and nodes[residue_index + i].strength_to(to_chain) >= 0:
                         # Don't do lookahead if we are already starting from a node that doesn't interact with to_chain
                         break
                     # Do we add the current residue to our fragment?
@@ -438,12 +440,12 @@ class _SelectionStrategies:
                         added_residue = True
                         for r in lookahead_buffer:
                             curr_fragment.append(r)
-                            fragment_strength += r.strength.get(to_chain, 0)
+                            fragment_strength += r.strength_to(to_chain, default=0)
                         curr_fragment.append(nodes[residue_index + i])
-                        fragment_strength += nodes[residue_index + i].strength.get(to_chain, 0)
+                        fragment_strength += nodes[residue_index + i].strength_to(to_chain, default=0)
                         break
                     else:  # Temporarily store current residue and look ahead
-                        lookahead_strength_buf += nodes[residue_index + i].strength.get(to_chain, 0)
+                        lookahead_strength_buf += nodes[residue_index + i].strength_to(to_chain, default=0)
                         lookahead_buffer.append(nodes[residue_index + i])
                 lookahead_buffer = []
                 if added_residue:  # During lookahead we added residue, we may proceed with current fragment
@@ -459,7 +461,7 @@ class _SelectionStrategies:
                                 fragment_strength = 0
                                 for residue in neighbors:
                                     curr_fragment.append(residue)
-                                    fragment_strength += residue.strength.get(to_chain, 0)
+                                    fragment_strength += residue.strength_to(to_chain, default=0)
                             if self.penalize_lone_residues:
                                 fragment_strength += self.lone_residue_penalty
 
@@ -560,7 +562,7 @@ class _SelectionStrategies:
                                 c_ter_resid=subset[-1].residue_id,
                                 c_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[-1]),
                                 nlist=subset,
-                                score=sum([_.strength.get(to_chain, 0) for _ in subset])
+                                score=sum([_.strength_to(to_chain, default=0) for _ in subset])
                             )
                             curr_combination = [use_frag] + curr_combination
                             combination_list.append(curr_combination)
@@ -580,7 +582,7 @@ class _SelectionStrategies:
                                 c_ter_resid=subset[-1].residue_id,
                                 c_ter_cacoords=PDBtool.get_alphacarbon(self.ref_relax, subset[-1]),
                                 nlist=subset,
-                                score=sum([_.strength.get(to_chain, 0) for _ in subset])
+                                score=sum([_.strength_to(to_chain, default=0) for _ in subset])
                             )
                             curr_combination.append(use_frag)
                             combination_list.append(curr_combination)

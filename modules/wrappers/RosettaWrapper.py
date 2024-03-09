@@ -536,6 +536,24 @@ class REBprocessor:
                     buf = buf + n
                 return buf
 
+        def strength_to(self, to_chain: str, only_attr: bool = False, default: float = 10000000000) -> float:
+            """
+            Returns the aggregate strength for all interactions with all chains in to chain. If only_attr is True, only
+            aggregate attractive interactions, if it is False (default), attractive and repulsive interactions get
+            summed together and may cancel out.
+
+            :param to_chain: A str of all concatened chain ids to aggregate the strength for, i. e. ACFH
+            :param only_attr: Whether to only aggregate attractive interactions (default: false)
+            :param default: What value to return if the interactions strength is 0, i. e. the residue doesn't interact
+                with the chains in question
+            :return: The aggregate interaction strength with the chains (or default)
+            """
+            if only_attr:
+                interaction_strength = sum([self.strength.get(_, 0) for _ in to_chain if self.strength.get(_, 0) < 0])
+            else:
+                interaction_strength = sum([self.strength.get(_, 0) for _ in to_chain])
+            return interaction_strength if interaction_strength != 0 else default
+
         def __contains__(self, item) -> bool:
             """
             Needed for custom 'in' behavior. Checks whether the residue id and chain id are the same as the input item.
@@ -579,6 +597,7 @@ class Flags(metaclass=Singleton._Singleton):
             "app": "InterfaceAnalyzer",
             "-score:weights": "ref2015",
             "-compute_packstat": True,
+            "-packstat::oversample": 100,
             "-tracer_data_print": False,
             "-pack_input": True,
             "-pack_separated": True,
