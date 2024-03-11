@@ -1238,7 +1238,7 @@ def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str]
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
-def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> None:
+def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> Path:
     """
     Update the chain order. Must send in a list with identical number of chains
 
@@ -1267,6 +1267,7 @@ def reorder_chains(pdb: str, chain_order: str, rename: str = None) -> None:
         f.write(rebuild_atom_line(new_order))
         f.write("TER\nEND\n")
         logging.info(f"Wrote reordered PDB to '{new_name}'!")
+    return Path(new_name)
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
