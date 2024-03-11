@@ -1249,6 +1249,7 @@ def reorder_chains(pdb: Union[str, Path], chain_order: str, rename: str = None) 
     logging.info(f"Reordering chains in '{pdb}' with order '{chain_order}'...")
     chain_info = {}
     new_order = []
+    pdb = os.path.normpath(pdb)
     for chain in get_chains(pdb):
         atoms = get_atoms_on_chain(pdb, chain)
         if len(atoms) == 0:
