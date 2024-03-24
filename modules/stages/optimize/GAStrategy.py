@@ -162,10 +162,10 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         """
         super().__init__()
         self.ref = ref_pdb
-        self.ref_reb = RosettaWrapper.REBprocessor.process_multipose(ref_reb)
+        #self.ref_reb = RosettaWrapper.REBprocessor.process_multipose(ref_reb)
         self.orig_pep_contacts = orig_pep_contacts
         self.contact_dict = {}
-        if self.ref_reb and self.orig_pep_contacts:
+        if self.orig_pep_contacts:
             self.do_contacts_check = True
             for n, node in enumerate(self.orig_pep_contacts):
                 if not isinstance(node, RosettaWrapper.REBprocessor.Node):
@@ -376,6 +376,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         pdb = PEPstrMODWrapper.submit_peptide(sequence=str(peptide))
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
         pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
+        pdb = PDBtool.update_chain_id(pdb, {PDBtool.get_chains(pdb)[0]: cm().get("partner_chain")})
 
         # Superimpose onto receptor and create merged pdb
         peptide_pdb, rms = PDBtool.superimpose_single(pdb, self.ref,
@@ -387,7 +388,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     def __getstate__(self):
         temp_dict = self.__dict__.copy()
         del temp_dict["rw"]  # Remove RosettaWrapper from pickled GAStrategy object to hopefully stop RecursionErrors
-        del temp_dict["ref_reb"]  # same reasoning here
+        #del temp_dict["ref_reb"]  # same reasoning here
         return temp_dict
 
     def _scii(self, scii: float) -> Union[

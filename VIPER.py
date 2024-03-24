@@ -29,7 +29,7 @@ class VIPER:
     candidate_counter = 0
 
     def __init__(self, pdb: Union[str, Path]):
-        # self.rw = RosettaWrapper.RosettaWrapper()
+        self.rw = RosettaWrapper.RosettaWrapper()
         self.base_pdb = Path(pdb)
         self.selection_strat = PeptideGenerator._SelectionStrategies.get_strategy()()
         self.candidate_counter = 0
@@ -40,23 +40,20 @@ class VIPER:
 
         :return: None
         """
-        # self.preprocess_pdb()
-        # reb_file = self.do_energy_breakdown()
-        cm().ref_relax = "6m0j_renum_relaxed.pdb"
-        a = submat.SubMat("BLOSUM80_shifted.json")
-        print("AAAAA")
-        input()
+        self.preprocess_pdb()
+        reb_nodes = self.do_energy_breakdown()
+        #cm().ref_relax = "6m0j_renum_relaxed.pdb"
+        #self.reference_renum_relaxed = "6m0j_renum_relaxed.pdb"
 
-        raw_candidate = self.generate_peptide(RosettaWrapper.REBprocessor.process_multipose("reb.out"))
+        raw_candidate = self.generate_peptide(reb_nodes)
 
-        print("".join(str(raw_candidate)))
-        sys.exit(0)
+        print(raw_candidate)
 
         # Generate _without_ linkers!
-        peptide_structure = self.get_tertiary_structure([n for n in raw_candidate if n.orig_res_id is not None],
-                                                        ["candidates", str(self.candidate_counter),
-                                                         f"candidate.pdb"])
-        # peptide_structure = self.get_tertiary_structure(candidate,
+        # peptide_structure = self.get_tertiary_structure([n for n in raw_candidate if n.orig_res_id is not None],
+        #                                                ["candidates", str(self.candidate_counter),
+        #                                                 f"candidate.pdb"])
+        #peptide_structure = self.get_tertiary_structure(raw_candidate,
         #                                                ["candidates", str(self.candidate_counter), f"candidate.pdb"])
 
         curr_candidate_dir = Path(os.path.join(cm().get("results_path"), "candidates", str(self.candidate_counter)))
@@ -71,25 +68,23 @@ class VIPER:
                                           k=1)[0]
             return "".join(_)
 
-        pepnodes = [n for n in raw_candidate if n.orig_res_id is not None]
+        pepnodes = [n for n in raw_candidate]
         pepseq = "".join([PDBtool.three_to_one(n.amino_acid) for n in pepnodes])
 
         initpop = []
-        while len(initpop) < 10:
+        while len(initpop) < 9:
             mut = mutate(pepseq)
             if mut not in initpop and mut != pepseq:
                 initpop.append(mut)
         initpop.append(pepseq)
         print(pprint.pformat(initpop))
-        ga = GAStrategy(ref_pdb=self.reference_renum_relaxed, populations=[Population(initpop)], config={
+        ga = GAStrategy(ref_pdb=self.reference_renum_relaxed, populations=[Population(initpop)], orig_pep_contacts=pepnodes, config={
             "select_percent": 0.3,
             "selection_mode": "ROULETTEWHEEL",
             "crossover_mode": "SINGLE",
-            "crossover_chance": 0.1,
+            "crossover_chance": 1/len(pepseq),
             "mutation_rate": 0.05,
             "mutation_bias": bmatrix,
-            "num_generations": 3,
-            "score_scii_radius": 10,
         })
         ga.run()
 
@@ -119,11 +114,29 @@ class VIPER:
         """
         logging.info(f"Preprocessing PDB '{self.base_pdb}'...")
         intermediary_dir = Path(os.path.join(cm().get("results_path"), "reference", "intermediary"))
+        reuse = os.path.abspath(os.path.join(intermediary_dir, "..", self.base_pdb.name[:-4] + "_renum_relaxed.pdb"))
+        if os.path.isfile(reuse):
+            logging.warning(f"Already found a preprocessed file, potentially from an earlier run: {reuse}")
+            if cm().get("reuse_preprocessed"):
+                logging.warning("Reusing that file!")
+                self.reference_renum_relaxed = Path(os.path.normpath(
+                    os.path.join(intermediary_dir, "..", self.base_pdb.name[:-4] + "_renum_relaxed.pdb")))
+                cm().ref_relax = self.reference_renum_relaxed
+                return self.reference_renum_relaxed
+            else:
+                logging.warning("Ignoring and potentially overwriting that file! ...")
         os.makedirs(intermediary_dir, exist_ok=True)
-        self.reference_renum_pdb = PDBtool.renumber_ascending(os.path.normpath(self.base_pdb),
+        chains = PDBtool.get_chains(self.base_pdb)
+        rem_chains = []
+        for c in chains:
+            if c not in cm().get("vsp_chain") and c not in cm().get("partner_chain"):
+                rem_chains.append(c)
+        self.base_pdb_cleaned = PDBtool.remove_chain(self.base_pdb, rem_chains, os.path.join(intermediary_dir, "..", self.base_pdb.name[:-4] + "_cleaned.pdb"))
+        self.base_pdb_cleaned = PDBtool.reorder_chains(self.base_pdb_cleaned, chain_order=f"{cm().get('partner_chain')}{cm().get('vsp_chain')}")
+        self.reference_renum_pdb = PDBtool.renumber_ascending(os.path.normpath(self.base_pdb_cleaned),
                                                               os.path.normpath(os.path.join(intermediary_dir,
                                                                                             "..",
-                                                                                            self.base_pdb.name[:-4] +
+                                                                                            self.base_pdb_cleaned.name[:-4] +
                                                                                             "_renum.pdb")))
         logging.debug(f"Relaxing renumbered PDB...")
         self.rw.run(RosettaWrapper.Flags().relax_pinned_positions, options={
@@ -145,6 +158,7 @@ class VIPER:
         logging.debug(f"Best PDB is '{best_pdb}' with score {scores['total_score']}")
         self.reference_renum_relaxed = Path(os.path.normpath(
             os.path.join(intermediary_dir, "..", self.base_pdb.name[:-4] + "_renum_relaxed.pdb")))
+        cm().ref_relax = self.reference_renum_relaxed
         shutil.copyfile(os.path.join(intermediary_dir, best_pdb + ".pdb"),
                         os.path.join(intermediary_dir, self.reference_renum_relaxed))
         logging.info(f"Finished preparing PDB! Prepared PDB is saved to '{self.reference_renum_relaxed}'")
@@ -159,11 +173,18 @@ class VIPER:
         """
         # Compare residue involvement in all the relaxations of the experimental structure
         out_path = os.path.normpath(self.rw.make_dir(["residue_energy_breakdown", "reference_pdb"]))
-        self.rw.run(RosettaWrapper.Flags().residue_energy_breakdown, options={
-            "-in:file:l": os.path.normpath(
-                os.path.join(cm().get("results_path"), "reference", "reference_ensemble")),
-            "-out:file:silent": os.path.join(out_path,
-                                             f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out")
+        if cm().get("rosetta_config.reb_only_use_best"):
+            self.rw.run(RosettaWrapper.Flags().residue_energy_breakdown, options={
+                "-in:file:s": os.path.normpath(self.reference_renum_relaxed),
+                "-out:file:silent": os.path.join(out_path,
+                                                 f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out")
+            })
+        else:
+            self.rw.run(RosettaWrapper.Flags().residue_energy_breakdown, options={
+                "-in:file:l": os.path.normpath(
+                    os.path.join(cm().get("results_path"), "reference", "reference_ensemble")),
+                "-out:file:silent": os.path.join(out_path,
+                                                 f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out")
         })
         return RosettaWrapper.REBprocessor.process_multipose(
             os.path.join(out_path, f"energy_breakdown_{Path(self.reference_renum_relaxed).name[:-4]}.out"))
