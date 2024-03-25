@@ -6,6 +6,7 @@
   "results_path": "output",
   "vsp_chain": "",
   "partner_chain": "",
+  "reuse_preprocessed": true,
   "rosetta_config": {
     "path": "",
     "path_out": "rosetta_output",
@@ -21,7 +22,8 @@
     "docking_runs": 5000,
     "docking_translation": 3,
     "docking_rotation": 8,
-    "refine_runs": 100
+    "refine_runs": 100,
+    "reb_only_use_best": true
   },
   "gromacs_config": {
     "path": "",
@@ -88,6 +90,7 @@
       "mutation_rate": 0.05,
       "mutation_bias": "BLOSUM62_shifted",
       "num_generations": 5,
+      "join_pops_after": -1,
       "getstruc_backoff": 600,
       "num_relax_individual": 10,
       "dynamic_concurrent_scoring": false,
@@ -101,7 +104,7 @@
       "scii": {
         "adjust_score": true,
         "radius": 7,
-        "threshold": 0.42,
+        "threshold": 0.4063,
         "stepping_width": 0.1,
         "bonus": 0.05,
         "custom_func": false
