@@ -46,7 +46,7 @@ class _SelectionStrategies:
         new_nlist = []
         increase_orig_num = 0
         for n, node in enumerate(nlist):
-            if len(new_nlist) >= cm().get("peptide_generator.max_length"):
+            if respect_length_limit and len(new_nlist) >= cm().get("peptide_generator.max_length"):
                 logging.warning(f"Hit length limit early while linking parts, returning early with {new_nlist}")
                 return new_nlist
             if first:
@@ -95,11 +95,11 @@ class _SelectionStrategies:
 
                 # Check that length of current candidate w/ linkers + linker + remaining peptide doesn't exceed length
                 # (Doesn't check for future linkers, but they will be considered once they are encountered)
-                if respect_length_limit and len(new_nlist) + len(linker) + len(nlist[n:]) >= cm().get(
-                        "peptide_generator.max_length"):
-                    logging.warning(f"Cannot insert linker, because it would make the peptide length exceed the limit. "
-                                    f"Returning early with {new_nlist}")
-                    return new_nlist
+                #if respect_length_limit and len(new_nlist) + len(linker) + len(nlist[n:]) >= cm().get(
+                #        "peptide_generator.max_length"):
+                #    logging.warning(f"Cannot insert linker, because it would make the peptide length exceed the limit. "
+                #                    f"Returning early with {new_nlist}")
+                #    return new_nlist
 
                 for lnum, element in enumerate(linker, start=1):  # Add linkers
                     if lnum > use_num:  # stop early, because of truncate limit
