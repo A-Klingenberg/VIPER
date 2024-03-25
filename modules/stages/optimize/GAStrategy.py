@@ -196,6 +196,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.config["mutation_bias"] = config.get("mutation_bias", submat.SubMat(
             cm().get("optimize.ga.mutation_bias", "BLOSUM62_shifted.json")))
         self.config["num_generations"] = config.get("num_generations", cm().get("optimize.ga.num_generations", 5))
+        self.config["join_pops_after"] = config.get("join_pops_after", cm().get("optimize.ga.join_pops_after", -1))
         self.config["getstruc_backoff"] = config.get("getstruc_backoff", cm().get("optimize.ga.getstruc_backoff",
                                                                                   10 * 60))  # wait 0-10 minutes, try to not stress webservice
         self.config["num_relax_individual"] = config.get("num_relax_individual",
@@ -563,6 +564,13 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         """
         for i in range(self.config["num_generations"]):
             logging.info(f"Genetic Algorithm, generation {self.generation}")
+            if self.generation == self.config["join_pops_after"]:
+                logging.info("Reached specified threshold, joining all populations together!")
+                new_pop = []
+                for pop in self.populations:
+                    for individual in pop:
+                        new_pop.append(individual)
+                self.populations = [Population(new_pop, score_func=self._score_func)]
             pop_count = 0
             for pop in self.populations:
                 logging.info(f"Old pop [#{pop_count}] : {pprint.pformat(pop)}")
