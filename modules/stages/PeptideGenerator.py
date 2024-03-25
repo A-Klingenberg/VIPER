@@ -46,6 +46,9 @@ class _SelectionStrategies:
         new_nlist = []
         increase_orig_num = 0
         for n, node in enumerate(nlist):
+            if len(new_nlist) >= cm().get("peptide_generator.max_length"):
+                logging.warning(f"Hit length limit early while linking parts, returning early with {new_nlist}")
+                return new_nlist
             if first:
                 new_nlist.append(REBprocessor.Node(amino_acid=node.amino_acid,
                                                    residue_id=node.residue_id,
@@ -148,29 +151,41 @@ class _SelectionStrategies:
                                 f"- did you mean a negative value (attraction)?")
             self.length_damping = cm().get("peptide_generator.length_damping")
             self.ld_min_length = abs(cm().get("peptide_generator.length_damping_min_length"))
-            self.ld_max_length = abs(cm().get("peptide_generator.length_damping_max_length"))
+            self.ld_max_length = int(abs(cm().get("peptide_generator.length_damping_max_length")))
+            if self.ld_min_length >= self.ld_max_length:
+                logging.warning(f"ld_min ({self.ld_min_length}) is bigger than ld_max ({self.ld_max_length})!")
+                if not cm().get("permissive"):
+                    raise ValueError(f"ld_min ({self.ld_min_length}) is bigger than ld_max ({self.ld_max_length})!")
             self.ld_initial_mult = abs(cm().get("peptide_generator.length_damping_initial_mult"))
             self.ld_final_mult = abs(cm().get("peptide_generator.length_damping_final_mult"))
-            self.ld_linear_stepping = cm().get("peptide_generator.length_damping_linear_stepping")
+            self.ld_linear_stepping = cm().get("peptide_generator.length_damping_linear_stepping", None)
             if m := cm().get("peptide_generator.length_damping_mode"):
-                if m.upper() == "QUADRATIC":
-                    if self.ld_initial_mult > self.ld_final_mult:
+                if self.ld_initial_mult > self.ld_final_mult:
+                    if m.upper() == "QUADRATIC":
                         self.damping_func = self._damping_factor_quadratic_penalty
+                    elif m.upper() == "LINEAR":
+                        self.damping_func = self._damping_factor_linear_penalty
                     else:
-                        self.damping_func = self._damping_factor_quadratic_bonus
-                elif m.upper() == "LINEAR":
-                    self.damping_func = self._damping_factor_linear
+                        logging.warning(f"Could not parse damping mode {m} for SelectionStrategy. "
+                                        f"Using default (QUADRATIC)...")
+                        self.damping_func = self._damping_factor_quadratic_penalty
                 else:
-                    logging.warning(f"Could not parse damping mode {m} for SelectionStrategy. "
-                                    f"Using default (QUADRATIC)...")
-                    self.damping_func = self._damping_factor_quadratic_penalty
-            if self.ld_linear_stepping > 0:
-                logging.warning(f"You have set a positive stepping ({self.ld_linear_stepping}) "
-                                f"- did you perhaps mean a negative stepping (reduction of x% per step)?")
-            if self.ld_initial_mult - (self.ld_max_length - self.ld_min_length) * self.ld_linear_stepping != \
-                    self.ld_final_mult:
-                logging.warning(f"Your configured settings for the linear damping factor yield a function that is not "
-                                f"continuous. There will be a jump when reaching the length_damping_max_length!")
+                    if m.upper() == "QUADRATIC":
+                        self.damping_func = self._damping_factor_quadratic_bonus
+                    elif m.upper() == "LINEAR":
+                        self.damping_func = self._damping_factor_linear_bonus
+                    else:
+                        logging.warning(f"Could not parse damping mode {m} for SelectionStrategy. "
+                                        f"Using default (QUADRATIC)...")
+                        self.damping_func = self._damping_factor_quadratic_bonus
+            if self.ld_linear_stepping is not None:
+                if self.damping_func(self.ld_max_length) != self.ld_final_mult:
+                    logging.warning(
+                        f"Your configured settings for the linear damping factor yield a function that is not "
+                        f"continuous. There will be a jump when reaching the length_damping_max_length!")
+            else:
+                self.ld_linear_stepping = (self.ld_initial_mult - self.ld_final_mult) / (
+                            self.ld_max_length - self.ld_min_length)
 
         @abstractmethod
         def reduce(self, from_chain: str, to_chain: str, nodes: List[REBprocessor.Node]) -> List[REBprocessor.Node]:
@@ -193,7 +208,7 @@ class _SelectionStrategies:
             ----------------+---|-----------------------|----------> (peptide length)
                             |   min length               max length
 
-            :param peptide_length: Length of the peptide, that the damping factor should be calculated for
+            :param peptide_length: Length of the peptide that the damping factor should be calculated for
             :return: Quadratic damping factor
             """
             return max(self.ld_final_mult,
@@ -219,7 +234,7 @@ class _SelectionStrategies:
             ----------------+---|-----------------------|----------> (peptide length)
                             |   min length               max length
 
-            :param peptide_length: Length of the peptide, that the damping factor should be calculated for
+            :param peptide_length: Length of the peptide that the damping factor should be calculated for
             :return: Quadratic damping factor
             """
             return max(self.ld_initial_mult,
@@ -228,7 +243,7 @@ class _SelectionStrategies:
                                 ((max(self.ld_min_length + 0.1, self.ld_max_length) - self.ld_min_length) ** 2)) +
                             self.ld_initial_mult)))
 
-        def _damping_factor_linear(self, peptide_length: int) -> float:
+        def _damping_factor_linear_penalty(self, peptide_length: int) -> float:
             """
             Returns the linear damping factor.
             The damping factor is the initial bonus, discounted by the stepping for every residue above the min length,
@@ -245,11 +260,36 @@ class _SelectionStrategies:
                             |   min length               max length
 
 
-            :param peptide_length:
+            :param peptide_length: Length of the peptide that the damping factor should be calculated for
             :return: Linear damping factor
             """
-            return (self.ld_initial_mult -
-                    min((max(0, peptide_length - self.ld_min_length)), self.ld_max_length) * self.ld_linear_stepping)
+            return max(max(0, self.ld_final_mult),
+                       self.ld_initial_mult - min(max(0, peptide_length - self.ld_min_length),
+                                                  self.ld_max_length) * self.ld_linear_stepping)
+
+        def _damping_factor_linear_bonus(self, peptide_length: int) -> float:
+            """
+            Returns the linear damping factor.
+            The damping factor is the initial bonus, discounted by the stepping for every residue above the min length,
+            up to the max length.
+
+                            ∧ (damping factor)
+                            |
+            initial bonus   |                         ___*--------
+                            |                ___---‾‾‾
+                            |       ___---‾‾‾
+            max penalty    -|---*‾‾‾                (The slope equals the stepping)
+                            |
+            ----------------+---|------------------------|----------> (peptide length)
+                            |   min length               max length
+
+
+            :param peptide_length: Length of the peptide that the damping factor should be calculated for
+            :return: Linear damping factor
+            """
+            return min(max(0, self.ld_final_mult),
+                       self.ld_initial_mult - min(max(0, peptide_length - self.ld_min_length),
+                                                  self.ld_max_length) * self.ld_linear_stepping)
 
     @final
     class GreedyExpand(SelectionStrategy):
@@ -267,7 +307,8 @@ class _SelectionStrategies:
                 logging.error("Passed an empty list of nodes!")
                 raise ValueError("Passed an empty list of nodes!")
             if any(_.chain not in from_chain for _ in nodes):
-                logging.warning(f"There exist nodes in the passed nodes object that aren't on from_chain ({from_chain})!")
+                logging.warning(
+                    f"There exist nodes in the passed nodes object that aren't on from_chain ({from_chain})!")
 
             def _include(add_to: list, n: REBprocessor.Node, curr_depth: int = 0) -> None:
                 if self.custom_func:
@@ -312,7 +353,8 @@ class _SelectionStrategies:
                                 f"significantly according to the specifications. Exiting...")
                 sys.exit(1)
             for residue in sorted(elligible_nodes, key=lambda node: node.strength_to(to_chain), reverse=False):
-                _include(final_residues, residue)
+                if residue not in final_residues:
+                    _include(final_residues, residue)
             return _SelectionStrategies.add_linkers(
                 sorted(final_residues, key=lambda node: node.residue_id, reverse=False),
                 self.linking_force_length_limit)
@@ -389,7 +431,8 @@ class _SelectionStrategies:
                     return custom_funcs.fragment_joiner_node_inclusion(self, n, to_chain, curr_strength,
                                                                        add_to_strength,
                                                                        curr_length, ignore_cutoff, damping_factor)
-                if not any(_ in to_chain for _ in nodes[residue_index].strength):  # Residue does not interact with target chain
+                if not any(_ in to_chain for _ in
+                           nodes[residue_index].strength):  # Residue does not interact with target chain
                     return False
                 abs_criterion = False
                 rel_criterion = False
@@ -507,7 +550,7 @@ class _SelectionStrategies:
                                 (coords1[1] - coords2[1]) ** 2 +
                                 (coords1[2] - coords2[2]) ** 2)
 
-                allowdist = len(self.linker) * self.linker_stretch_factor
+                allowdist = max(1, len(self.linker)) * self.linker_stretch_factor
 
                 def grow(fragment_list: List, curr_combination: List, combination_list: List):
                     # TODO: Maybe use set instead of list for combination list so that duplicates get discarded?
