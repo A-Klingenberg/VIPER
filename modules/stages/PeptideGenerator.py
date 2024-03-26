@@ -93,13 +93,12 @@ class _SelectionStrategies:
                         use_num = interres - 1
                 base_id = new_nlist[-1].residue_id
 
-                # Check that length of current candidate w/ linkers + linker + remaining peptide doesn't exceed length
-                # (Doesn't check for future linkers, but they will be considered once they are encountered)
-                #if respect_length_limit and len(new_nlist) + len(linker) + len(nlist[n:]) >= cm().get(
-                #        "peptide_generator.max_length"):
-                #    logging.warning(f"Cannot insert linker, because it would make the peptide length exceed the limit. "
-                #                    f"Returning early with {new_nlist}")
-                #    return new_nlist
+                # Check that length of current candidate w/ linkers + linker + doesn't hit or exceed length
+                if respect_length_limit and len(new_nlist) + len(linker) >= cm().get(
+                        "peptide_generator.max_length"):
+                    logging.warning(f"Cannot insert linker, because it would make the peptide length exceed the limit. "
+                                    f"Returning early with {new_nlist}")
+                    return new_nlist
 
                 for lnum, element in enumerate(linker, start=1):  # Add linkers
                     if lnum > use_num:  # stop early, because of truncate limit
