@@ -236,6 +236,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             self.out_path = os.path.normpath(os.path.join(out_base, "GA"))
         else:
             self.out_path = os.path.normpath(os.path.join(cm().get("results_path"), "GA"))
+        os.makedirs(self.out_path, exist_ok=True)
         if metric not in ["MIN", "MAX"]:
             self.metric = "MIN"
         else:
