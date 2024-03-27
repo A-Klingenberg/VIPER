@@ -1272,7 +1272,8 @@ def reorder_chains(pdb: Union[str, Path], chain_order: str, rename: str = None) 
 
 
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
-def update_chain_id(pdb: Union[Path, str], id_mapping: dict, out: Union[Path, str] = None, return_only: bool = False) -> Union[Path, str]:
+def update_chain_id(pdb: Union[Path, str], id_mapping: dict, out: Union[Path, str] = None, return_only: bool = False) -> \
+        Union[Path, str]:
     """
     Update the labels based on submitted chain dictionary
     Ex of dictionary: {'A':'D', 'B':'E'}  A gets replaced with D and B gets replaced with E
@@ -1788,3 +1789,60 @@ def get_dist_closest_atom(pdb: str, first: List[Union[int, REBprocessor.Node]],
     idx_first = neighbor_indices[idx_second][0]
 
     return closest, points_first[idx_first][-1], points_second[idx_second][-1]
+
+
+def annotate_PDB_binding(pdb: Union[str, Path], annotate_chain: str, to_chain: str,
+                         reb: Union[List[REBprocessor.Node], str, Path],
+                         model: int = 0, out: Union[str, Path] = None) -> Path:
+    """
+    Annotates a PDB by replacing the bfactor of atoms within a residue on a specified chain with the aggregate binding
+    energy to specified chains.
+
+    :param pdb: The PDB to annotate
+    :param annotate_chain: Which chains should be annotated
+    :param reb: Either a list of nodes from the residue energy breakdown for the PDB, or a path to a saved REB of the PDB
+    :param to_chain: Which cahins to aggregate the strength for
+    :param model: Which model in the PDB to use. Default: first one
+    :param out: Where to save the resultant PDB. Default: Same directory, with name + _annotate_{annotate_chain}_{to_chain}.pdb
+    :return: The path to the annotated and saved PDB
+    """
+    try:
+        use_path = Path(pdb).resolve(strict=True)
+        if not isinstance(reb, List):
+            reb = Path(reb).resolve(strict=True)
+            reb = REBprocessor.process_multipose(reb)
+        if out:
+            out = Path(out).resolve()
+    except (FileNotFoundError, RuntimeError) as e:
+        logging.error(f"Couldn't resolve a path you provided. Stacktrace: {e}")
+        raise e
+
+    if any([not isinstance(_, REBprocessor.Node) for _ in reb]):
+        logging.error(f"An entry in the list you provided wasn't a REBprocessor Node! Aborting...")
+        if cm().get("permissive"):
+            return use_path
+        else:
+            raise ValueError("An entry in the list you provided wasn't a REBprocessor Node!")
+
+    parser = Bio.PDB.PDBParser(QUIET=cm().get("verbose"))
+    struc = parser.get_structure("struc", pdb)[model]
+
+    for chain in annotate_chain.upper():
+        chainstruc = struc[chain]
+        for residue in chainstruc.get_residues():
+            strength = 0.
+            for node in reb:
+                if node.chain == chain and node.residue_id == residue.get_id()[1]:
+                    strength = node.strength_to(to_chain, default=0)
+                    break
+            for atom in residue:
+                atom.set_bfactor(strength)
+
+    pdb_io = Bio.PDB.PDBIO()
+    pdb_io.set_structure(struc)
+
+    new_name = use_path.name[:-4] + f"_annotate_{annotate_chain}_{to_chain}.pdb"
+    if out:
+        new_name = out
+    pdb_io.save(new_name)
+    return new_name
