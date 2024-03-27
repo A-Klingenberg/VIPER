@@ -49,7 +49,7 @@ class VIPER:
         raw_candidate = self.generate_peptide(reb_nodes)
         curr_candidate_dir = Path(os.path.join(cm().get("results_path"), "candidates", str(self.candidate_counter)))
         peptide_structure = self.get_tertiary_structure(raw_candidate,
-                                                        [curr_candidate_dir, f"candidate.pdb"])
+                                                        ["candidates", str(self.candidate_counter), f"candidate.pdb"])
         best, score = self.optimize(raw_candidate, pad_to=10, out_path=curr_candidate_dir)
 
     def preprocess_pdb(self) -> Path:
