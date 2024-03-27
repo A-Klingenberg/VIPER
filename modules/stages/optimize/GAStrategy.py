@@ -236,7 +236,6 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             self.out_path = os.path.normpath(os.path.join(out_base, "GA"))
         else:
             self.out_path = os.path.normpath(os.path.join(cm().get("results_path"), "GA"))
-        os.makedirs(self.out_path, exist_ok=True)
         if metric not in ["MIN", "MAX"]:
             self.metric = "MIN"
         else:
@@ -246,7 +245,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 pop.score_func = self._score_func
         os.makedirs(self.out_path, exist_ok=True)
         self.vsp = PDBtool.remove_chain(self.ref, [cm().get("partner_chain")],
-                                        os.path.join(cm().get("results_path"), "GA", "vsp.pdb"))
+                                        os.path.join(self.out_path, "vsp.pdb"))
         self._cust_addin_mutate = cm().get("optimize.ga.custom_addin_mutate")
         logging.info(f"Instantiating with following parameters: {pprint.pformat(self.config, compact=True)}")
 
@@ -663,7 +662,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             best = min(self.score_repo.items(), key=lambda item: item[1]["total"])
         logging.info(f"Best found candidate is {best[0]} with score {best[1]['total']}.")
         logging.debug(f"Dumping score repo: {pprint.pformat(self.score_repo)}")
-        with open(os.path.join(cm().get("results_path"), "GA", "scores.json"), "w+") as o:
+        with open(os.path.join(self.out_path, "scores.json"), "w+") as o:
             json.dump(self.score_repo, o)
 
         if self.metric == "MIN":
