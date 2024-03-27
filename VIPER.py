@@ -155,7 +155,7 @@ class VIPER:
                                                 to_chain=cm().get("vsp_chain"),
                                                 nodes=nlist)
         self.summary_logger.info(f"An initial candidate peptide has been generated: "
-                                 f"{' '.join([_.__repr__() for _ in candidate])[:-1]}")
+                                 f"{' '.join([_.__repr__() for _ in candidate])}")
         return candidate
 
     def get_tertiary_structure(self, sequence: List[RosettaWrapper.REBprocessor.Node],
