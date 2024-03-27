@@ -654,11 +654,24 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                 logging.info(f"New pop [#{pop_count}] : {pop}")
                 pop_count += 1
             self.generation += 1
-        best = min(self.score_repo.items(), key=lambda item: item[1]["total"])
+        if self.metric == "MIN":
+            best = min(self.score_repo.items(), key=lambda item: item[1]["total"])
+        elif self.metric == "MAX":
+            best = max(self.score_repo.items(), key=lambda item: item[1]["total"])
+        else:
+            best = min(self.score_repo.items(), key=lambda item: item[1]["total"])
         logging.info(f"Best found candidate is {best[0]} with score {best[1]['total']}.")
         logging.debug(f"Dumping score repo: {pprint.pformat(self.score_repo)}")
         with open(os.path.join(cm().get("results_path"), "GA", "scores.json"), "w+") as o:
             json.dump(self.score_repo, o)
+
+        if self.metric == "MIN":
+            ordered = sorted(self.score_repo.items(), key=lambda tup: tup[1]["total"])
+        elif self.metric == "MAX":
+            ordered = sorted(self.score_repo.items(), key=lambda tup: tup[1]["total"], reverse=True)
+        else:
+            ordered = sorted(self.score_repo.items(), key=lambda tup: tup[1]["total"])
+
         l = logging.getLogger("summary")
-        l.info(f"Finished running the genetic algorithm! ")
+        l.info(f"Finished running the genetic algorithm! These are the three best candidates: {pprint.pformat(ordered[:3], compact=True)}")
         return best[0], best[1]["total"]
