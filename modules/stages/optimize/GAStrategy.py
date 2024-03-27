@@ -378,8 +378,13 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             time.sleep(delay)
         pdb = PEPstrMODWrapper.submit_peptide(sequence=str(peptide))
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
-        pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
-        pdb = PDBtool.update_chain_id(pdb, {PDBtool.get_chains(pdb)[0]: cm().get("partner_chain")})
+        use_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}")
+        os.makedirs(use_path, exist_ok=True)
+        use_path = os.path.normpath(os.path.join(use_path, "base.pdb"))
+        with open(use_path, "w+") as o:
+            o.write(pdb)
+        # pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
+        pdb = PDBtool.update_chain_id(use_path, {PDBtool.get_chains(use_path)[0]: cm().get("partner_chain")})
 
         # Superimpose onto receptor and create merged pdb
         peptide_pdb, rms = PDBtool.superimpose_single(pdb, self.ref,
