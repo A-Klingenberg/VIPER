@@ -23,6 +23,7 @@ class ConfigManager(metaclass=Singleton._Singleton):
     program_path: str = None
     results_path: str = None
     log_path: str = None
+    summary_logger: logging.Logger = None
     ref_relax: Union[Path, str] = None
 
     def __init__(self, args: argparse.Namespace = None,
@@ -88,6 +89,15 @@ class ConfigManager(metaclass=Singleton._Singleton):
         # If the folder where the logs shall be saved doesn't exist, create it
         os.makedirs(self.log_path, exist_ok=True)
 
+        # Summary
+        summary_formatter = logging.Formatter("%(asctime)s | (%(module)s): %(message)s")
+        self.summary_logger = logging.getLogger("summary")
+        self.summary_logger.setLevel(logging.INFO)
+        fhnd = logging.FileHandler(os.path.abspath(self.log_path + "summary.txt"))
+        fhnd.setFormatter(summary_formatter)
+        self.summary_logger.addHandler(fhnd)
+
+        # Regular
         if self.get("verbose"):
             logging.basicConfig(level=logging.DEBUG,
                                 filename=os.path.abspath(self.log_path + "log.txt"),
@@ -169,6 +179,7 @@ class ConfigManager(metaclass=Singleton._Singleton):
 
         :return: None
         """
+        self.summary_logger.info(f"Running VIPER version {version.VERSION}.")
         logging.info(f"Running Python ver. {sys.version}")
         logging.info(f"Running VIPER version {version.VERSION}.")
         logging.info(f"Using the following configuration:")

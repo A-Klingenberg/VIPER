@@ -137,7 +137,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     _cust_addin_mutate: bool = False
     do_contacts_check: bool = False
 
-    def __init__(self, ref_pdb: Union[Path, str], populations: List[Population], ref_reb: Union[Path, str] = None,
+    def __init__(self, ref_pdb: Union[Path, str], populations: List[Population], out_base: Union[Path, str] = None,
                  orig_pep_contacts: List[RosettaWrapper.REBprocessor.Node] = None, score_func: Callable = None,
                  select: Callable = None, crossover: Callable = None, mutate: Callable = None, config: dict = None,
                  propagate_score_func: bool = True, metric: str = "MIN"):
@@ -147,8 +147,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         :param ref_pdb: A path to the reference pdb for which to optimize the peptide.
         :param populations: A list of populations to optimize. If you only want to use a single Population, you still
             have to wrap it in a list! ( [...] )
-        :param ref_reb: A reference residue energy breakdown of the original VSP+receptor complex to use in scoring.
-            (Optional) If this argument isn't given, original contact checking will not be performed.
+        :param out_base: A base directionary to save the results of the GA under. (Optional) If this argument isn't
+            given, they will simply be save to a folder called "GA" in the base results path.
         :param orig_pep_contacts: The starting peptide to use for residue-residue contact analysis. (Optional) If this
             argument isn't given, original contact checking will not be performed.
         :param score_func: (Optional) The score function to use on the individual. If not supplied, uses the builtin
@@ -162,7 +162,6 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         """
         super().__init__()
         self.ref = ref_pdb
-        #self.ref_reb = RosettaWrapper.REBprocessor.process_multipose(ref_reb)
         self.orig_pep_contacts = orig_pep_contacts
         self.contact_dict = {}
         if self.orig_pep_contacts:
@@ -233,7 +232,10 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         self.score_repo = {}
         self.generation = 0
         self.rw = RosettaWrapper.RosettaWrapper()
-        self.out_path = os.path.normpath(os.path.join(cm().get("results_path"), "GA"))
+        if out_base:
+            self.out_path = os.path.normpath(os.path.join(out_base, "GA"))
+        else:
+            self.out_path = os.path.normpath(os.path.join(cm().get("results_path"), "GA"))
         if metric not in ["MIN", "MAX"]:
             self.metric = "MIN"
         else:
@@ -655,4 +657,8 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         best = min(self.score_repo.items(), key=lambda item: item[1]["total"])
         logging.info(f"Best found candidate is {best[0]} with score {best[1]['total']}.")
         logging.debug(f"Dumping score repo: {pprint.pformat(self.score_repo)}")
+        with open(os.path.join(cm().get("results_path"), "GA", "scores.json"), "w+") as o:
+            json.dump(self.score_repo, o)
+        l = logging.getLogger("summary")
+        l.info(f"Finished running the genetic algorithm! ")
         return best[0], best[1]["total"]
