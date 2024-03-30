@@ -1,0 +1,37 @@
+{
+    "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+    "type": "SoftwareSourceCode",
+    "applicationCategory": "Structural Biology",
+    "author": [
+        {
+            "type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "Ghersi Bioinformatics Lab, University of Nebraska at Omaha"
+            },
+            "email": "aklingenberg@unomaha.edu",
+            "familyName": "Klingenberg",
+            "givenName": "Arne"
+        }
+    ],
+    "codeRepository": "git+https://github.com/A-Klingenberg/VIPER",
+    "dateModified": "2024-03-27",
+    "datePublished": "2024-03-27",
+    "description": "VIPER is a framework for the automated design of inhibitory decoy peptides based on structural binding data of two proteins.",
+    "keywords": [
+        "structural biology",
+        "decoy peptide",
+        "attachment inhibitor"
+    ],
+    "license": "https://spdx.org/licenses/MIT",
+    "name": "VIPER",
+    "operatingSystem": "Linux",
+    "programmingLanguage": "Python 3",
+    "softwareRequirements": [
+        "Tested with Python 3.8",
+        "Requirements in requirements.txt are necessary.",
+        "RosettaCommons Software Suite."
+    ],
+    "version": "1.0.0",
+    "developmentStatus": "wip"
+}

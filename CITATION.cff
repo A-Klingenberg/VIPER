@@ -1,0 +1,28 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: VIPER
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Arne
+    family-names: Klingenberg
+    email: aklingenberg@unomaha.edu
+    affiliation: >-
+      Ghersi Bioinformatics Lab, University of Nebraska at
+      Omaha
+repository-code: 'https://github.com/A-Klingenberg/VIPER'
+abstract: >-
+  VIPER is a framework for the automated design of
+  inhibitory decoy peptides based on structural binding data
+  of two proteins.
+keywords:
+  - structural biology
+  - decoy peptide
+  - attachment inhibitor
+license: MIT
+version: 1.0.0
+date-released: '2024-03-27'
