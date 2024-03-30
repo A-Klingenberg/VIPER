@@ -1,4 +1,4 @@
-# VIPER
+# VIPER   [![DOI](https://zenodo.org/badge/682657296.svg)](https://zenodo.org/doi/10.5281/zenodo.10897858)
 This is the official repository for the software tool **VIPER: Viral Inhibition via Peptide Engineering and Receptor-Mimicry**.
 
 
