@@ -270,7 +270,9 @@ class RosettaWrapper(metaclass=Singleton._Singleton):
                 continue
             if "-run:jran" in k:
                 flag["-run:constant_seed"] = None
-                flag[k] = cm().get("rosetta_config.random_seed")
+                s = cm().get("rosetta_config.random_seed", -1)
+                s = cm().get("random_seed") if s == -1 else s
+                flag[k] = s
                 continue
             if "-nstruct" in k and v is None:
                 # This one is dependent on specific context and can't be autodiscovered
@@ -716,6 +718,7 @@ class Flags(metaclass=Singleton._Singleton):
         return {
             "app": "docking_protocol",
             "-score:weights": "ref2015",
+            "-score:docking_interface_score:": 1,  # add interface score to score file
             "-in:file:s": None,
             "-unboundrot": None,  # pdb
             "-nstruct": None,  # docking_runs
