@@ -1,5 +1,5 @@
 {
-  "log_path": "",
+  "log_path": "Logs",
   "verbose": false,
   "random_seed": 3333333,
   "num_CPU_cores": "",
@@ -12,7 +12,7 @@
     "path_out": "rosetta_output",
     "random_seed": 3333333,
     "use_num_cores": 8,
-    "archive_intermediate": true,
+    "archive_intermediate": false,
     "prerelax_complex_runs": 100,
     "relax_partner_runs": 100,
     "relax_peptide_nmr_runs": 40,
