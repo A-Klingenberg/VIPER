@@ -1240,7 +1240,7 @@ def join(pdb_1: Union[Path, str], pdb_2: Union[Path, str], out: Union[Path, str]
 # TODO: Have this keep HEADER, REMARK, and SSBOND records as well.
 def reorder_chains(pdb: Union[str, Path], chain_order: str, rename: str = None) -> Path:
     """
-    Update the chain order. Must send in a list with identical number of chains
+    Update the chain order. Must pass a list with identical number of chains
 
     :param pdb: The path to the PDB to be read
     :param chain_order: Order in which you want the chains to be in the file
