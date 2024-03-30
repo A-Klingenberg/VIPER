@@ -678,5 +678,5 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             ordered = sorted(self.score_repo.items(), key=lambda tup: tup[1]["total"])
 
         l = logging.getLogger("summary")
-        l.info(f"Finished running the genetic algorithm! These are the three best candidates: {pprint.pformat(ordered[:3], compact=True)}")
+        l.info(f"Finished running the genetic algorithm! These are the (up to) three best candidates: {pprint.pformat(ordered[:3], compact=True)}")
         return best[0], best[1]["total"]
