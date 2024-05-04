@@ -1,4 +1,4 @@
-# This code has been adapted from previous work by Austin Seamann, Dario Ghersi, and Ryan Ehrlich.
+# This code has been adapted and extended on from previous work by Austin Seamann, Dario Ghersi, and Ryan Ehrlich.
 # Please refer to https://github.com/Aseamann/ACEdecoy
 import collections
 import io
@@ -25,9 +25,7 @@ from util import file_utils
 
 cm = ConfigManager.get_instance
 
-TOOL_VER = "0.2.1_alpha"
-
-# TODO: Make sure all methods accept Paths as well as str
+TOOL_VER = "1.0.0"
 
 # These types of PDB records will be carried / written over into the newly generated file when PDBs are modified
 KEEP_LINES = ["HEADER", "REMARK", "SSBOND", "ATOM  ", "TER   ", "END   "]

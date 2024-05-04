@@ -1,20 +1,49 @@
 import logging
 import re
 import time
+from pathlib import Path
+from typing import Union, List
 
 import requests
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 
 from ConfigManager import ConfigManager
+from modules.interfaces.StructureProvider import StructureProvider
+from modules.wrappers import RosettaWrapper
+from util import PDBtool
 
 cm = ConfigManager.get_instance
 
 
-class PEPstrMODWrapper:
+class PEPstrMODWrapper(StructureProvider):
     ENDPOINT = "https://webs.iiitd.edu.in/raghava/pepstrmod/nat_ss_upload.php"
     ENDPOINT_REDUNDANCY = "http://osddlinux.osdd.net/raghava/pepstrmod/nat_ss_upload.php"
     _use_redundancy = False
+
+    def get_structure(self, protein: Union[str, List[RosettaWrapper.REBprocessor.Node]]) -> Union[str, Path]:
+        """
+        Gets the tertiary structure of the submitted protein. Wrapper method for submit_peptide, which actually gets the
+        tertiary structure.
+
+        :param protein: The protein to get the tertiary structure for. Can be either a str of single letter notation
+            amino acids, or a list of REBprocessor.Node objects.
+        :return: The content of the PDB.
+        """
+        # Convert list of nodes to str of amino acids
+        if isinstance(protein, List):
+            use_protein = ""
+            for n in protein:
+                letter = PDBtool.three_to_one(n.amino_acid)
+                if letter == "":
+                    if cm().get("permissive"):
+                        logging.warning(f"Couldn't get single letter notation for reside {n}, skipping this residue!")
+                    else:
+                        logging.error(f"Couldn't get single letter notation for reside {n}, aborting!")
+                        raise ValueError(f"Couldn't get single letter notation for reside {n}, aborting!")
+                use_protein += letter
+            protein = use_protein
+        return PEPstrMODWrapper.submit_peptide(protein)
 
     @staticmethod
     def submit_peptide(sequence: str, options: dict = None) -> str:

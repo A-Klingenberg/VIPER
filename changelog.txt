@@ -1,0 +1,9 @@
+
+1.0.1
+-----
+Removed some unnecessary files.
+
+
+1.0.0
+-----
+Initial release

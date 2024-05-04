@@ -18,11 +18,11 @@ from typing import List, Callable, Union, Tuple, Any
 import numpy as np
 
 import ConfigManager
+from modules.interfaces import OptimizationStrategy
 from modules.wrappers import RosettaWrapper
 from modules.wrappers.PEPstrMODWrapper import PEPstrMODWrapper
-from util import SCII, file_utils, PDBtool
+from util import SCII, PDBtool
 from util.substitution_matrices import submat
-from . import OptimizationStrategy
 
 cm = ConfigManager.ConfigManager.get_instance
 
@@ -218,7 +218,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                       cm().get("optimize.ga.scii.adjust_score", True))
         self.config["scii_score_radius"] = config.get("score_scii_radius", cm().get("optimize.ga.scii.radius", 7))
         self.config["scii_score_threshold"] = config.get("score_scii_threshold",
-                                                         cm().get("optimize.ga.scii.threshold", 0.42))
+                                                         cm().get("optimize.ga.scii.threshold", 0.4063))
         self.config["scii_score_stepping_width"] = config.get("score_scii_stepping_width",
                                                               cm().get("optimize.ga.scii.stepping_width", 0.1))
         self.config["scii_score_bonus"] = config.get("score_scii_bonus", cm().get("optimize.ga.scii.bonus", 0.05))
