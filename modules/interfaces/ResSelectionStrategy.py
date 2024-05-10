@@ -1,9 +1,8 @@
 import logging
 from abc import ABCMeta, abstractmethod
-from typing import List, Type
+from typing import List
 
 import ConfigManager
-from modules.stages import PeptideGenerator
 from modules.wrappers.RosettaWrapper import REBprocessor
 
 cm = ConfigManager.ConfigManager.get_instance
@@ -160,19 +159,3 @@ class ResSelectionStrategy(metaclass=ABCMeta):
         return min(max(0, self.ld_final_mult),
                    self.ld_initial_mult - min(max(0, peptide_length - self.ld_min_length),
                                               self.ld_max_length) * self.ld_linear_stepping)
-
-
-def get_strategy(strategy: str = None) -> Type[ResSelectionStrategy]:
-    strat = cm().get("peptide_generator.use_strategy")
-
-    if strategy is not None:
-        strat = strategy.upper()
-    if cm().get("peptide_generator.custom_strategy"):
-        import custom_funcs
-        return custom_funcs.CustomSelectionStrategy
-    if strat == "GREEDYEXPAND" or strat == "GREEDY_EXPAND":
-        return PeptideGenerator.GreedyExpand
-    elif strat == "FRAGMENTJOINER" or strat == "FRAGMENT_JOINER":
-        return PeptideGenerator.FragmentJoiner
-    else:  # Default is FragmentJoiner strategy
-        return PeptideGenerator.FragmentJoiner

@@ -5,7 +5,7 @@ import pprint
 import sys
 from dataclasses import dataclass
 from math import sqrt
-from typing import List, final, Tuple
+from typing import List, final, Tuple, Type
 
 import ConfigManager
 from modules.interfaces.ResSelectionStrategy import ResSelectionStrategy
@@ -536,3 +536,19 @@ class FragmentJoiner(ResSelectionStrategy):
         logging.debug(f"Final joined peptide fragments are: {pprint.pformat(final_peptide, compact=True)}")
         return add_linkers(
             sorted(final_peptide, key=lambda node: node.residue_id, reverse=False), self.linking_force_length_limit)
+
+
+def get_strategy(strategy: str = None) -> Type[ResSelectionStrategy]:
+    strat = cm().get("peptide_generator.use_strategy")
+
+    if strategy is not None:
+        strat = strategy.upper()
+    if cm().get("peptide_generator.custom_strategy"):
+        import custom_funcs
+        return custom_funcs.CustomSelectionStrategy
+    if strat == "GREEDYEXPAND" or strat == "GREEDY_EXPAND":
+        return GreedyExpand
+    elif strat == "FRAGMENTJOINER" or strat == "FRAGMENT_JOINER":
+        return FragmentJoiner
+    else:  # Default is FragmentJoiner strategy
+        return FragmentJoiner
