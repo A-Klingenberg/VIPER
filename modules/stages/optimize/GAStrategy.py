@@ -380,7 +380,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         use_path_items = ["GA", f"gen{self.generation}_{peptide}"]
         use_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}")
         os.makedirs(use_path, exist_ok=True)
-        use_path = os.path.normpath(os.path.join(use_path, "base.pdb"))
+        use_path = Path(os.path.join(use_path, "base.pdb"))
         with open(use_path, "w+") as o:
             o.write(pdb)
         # pdb = file_utils.make_file(["GA", f"gen{self.generation}_{peptide}", "base.pdb"], pdb)
@@ -390,7 +390,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         peptide_pdb, rms = PDBtool.superimpose_single(pdb, self.ref,
                                                       query_chain=f"{PDBtool.get_chains(os.path.normpath(pdb))[0]}",
                                                       ref_chain=f"{cm().get('partner_chain')}",
-                                                      out_path=[*use_path_items, f"{peptide}_aligned.pdb"])
+                                                      out_path=[str(use_path.parent), f"{peptide}_aligned.pdb"])
         return PDBtool.join(peptide_pdb, self.vsp), peptide_pdb
 
     def __getstate__(self):
