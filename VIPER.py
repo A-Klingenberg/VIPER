@@ -1,7 +1,6 @@
 import copy
 import logging
 import os.path
-import pprint
 import random
 import shutil
 import sys
@@ -9,7 +8,6 @@ from pathlib import Path
 from typing import Union, List, Any, Tuple
 
 import ConfigManager
-from modules.interfaces import ResSelectionStrategy
 from modules.stages import PeptideGenerator
 from modules.stages.optimize.GAStrategy import GAStrategy, Population
 from modules.wrappers import RosettaWrapper
@@ -33,7 +31,7 @@ class VIPER:
     def __init__(self, pdb: Union[str, Path]):
         self.rw = RosettaWrapper.RosettaWrapper()
         self.base_pdb = Path(pdb)
-        self.selection_strat = ResSelectionStrategy.get_strategy()()
+        self.selection_strat = PeptideGenerator.get_strategy()()
         self.candidate_counter = 0
         self.summary_logger = logging.getLogger("summary")
         self.summary_logger.info(f"Trying to generate peptides for {self.base_pdb.name}!")
