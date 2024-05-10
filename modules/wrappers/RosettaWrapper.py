@@ -622,7 +622,7 @@ class Flags(metaclass=Singleton._Singleton):
             "-out:suffix": "_relax_pinned",
             "-run:constant_seed": None,
             "-run:jran": None,
-            "-nstruct": 10,
+            "-nstruct": 100,
             "-ex1": None,
             "-ex2": None,
             "-use_input_sc": None,

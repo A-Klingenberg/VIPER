@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Union, List, Any, Tuple
 
 import ConfigManager
+from modules.interfaces import ResSelectionStrategy
 from modules.stages import PeptideGenerator
 from modules.stages.optimize.GAStrategy import GAStrategy, Population
 from modules.wrappers import RosettaWrapper
@@ -32,10 +33,11 @@ class VIPER:
     def __init__(self, pdb: Union[str, Path]):
         self.rw = RosettaWrapper.RosettaWrapper()
         self.base_pdb = Path(pdb)
-        self.selection_strat = PeptideGenerator._SelectionStrategies.get_strategy()()
+        self.selection_strat = ResSelectionStrategy.get_strategy()()
         self.candidate_counter = 0
         self.summary_logger = logging.getLogger("summary")
         self.summary_logger.info(f"Trying to generate peptides for {self.base_pdb.name}!")
+        sys.setrecursionlimit(3000)
 
     def run(self) -> None:
         """
@@ -50,7 +52,8 @@ class VIPER:
         curr_candidate_dir = Path(os.path.join(cm().get("results_path"), "candidates", str(self.candidate_counter)))
         peptide_structure = self.get_tertiary_structure(raw_candidate,
                                                         ["candidates", str(self.candidate_counter), f"candidate.pdb"])
-        best, score = self.optimize(raw_candidate, pad_to=10, out_path=curr_candidate_dir)
+        if cm().get("optimize.do_optimization", True):
+            best, score = self.optimize(raw_candidate, pad_to=cm().get("optimize.ga.pop_size"), out_path=curr_candidate_dir)
 
     def preprocess_pdb(self) -> Path:
         """
@@ -74,13 +77,16 @@ class VIPER:
                 logging.warning("Ignoring and potentially overwriting that file! ...")
         os.makedirs(intermediary_dir, exist_ok=True)
         chains = PDBtool.get_chains(self.base_pdb)
-        rem_chains = []
-        for c in chains:
-            if c not in cm().get("vsp_chain") and c not in cm().get("partner_chain"):
-                rem_chains.append(c)
-        self.base_pdb_cleaned = PDBtool.remove_chain(self.base_pdb, rem_chains, os.path.join(intermediary_dir, "..",
-                                                                                             self.base_pdb.name[
-                                                                                             :-4] + "_cleaned.pdb"))
+        if cm().get("remove_other_chains", True):
+            rem_chains = []
+            for c in chains:
+                if c not in cm().get("vsp_chain") and c not in cm().get("partner_chain"):
+                    rem_chains.append(c)
+            self.base_pdb_cleaned = PDBtool.remove_chain(self.base_pdb, rem_chains, os.path.join(intermediary_dir, "..",
+                                                                                                 self.base_pdb.name[
+                                                                                                 :-4] + "_cleaned.pdb"))
+        else:
+            self.base_pdb_cleaned = self.base_pdb
         self.base_pdb_cleaned = PDBtool.reorder_chains(self.base_pdb_cleaned,
                                                        chain_order=f"{cm().get('partner_chain')}{cm().get('vsp_chain')}")
         self.reference_renum_pdb = PDBtool.renumber_ascending(os.path.normpath(self.base_pdb_cleaned),
@@ -94,7 +100,7 @@ class VIPER:
             "-in:file:s": os.path.normpath(self.reference_renum_pdb),
             "-out:path:all": intermediary_dir,
             "-in:file:native": os.path.normpath(self.reference_renum_pdb),
-            "-nstruct": cm().get("rosetta_config.prerelax_complex_runs"),
+            "-nstruct": cm().get("rosetta_config.prerelax_complex_runs", 100),
         })
         initials = file_utils.make_pdb_ensemble_list(intermediary_dir,
                                                      os.path.normpath(
@@ -193,13 +199,6 @@ class VIPER:
         pass
 
     def dock_peptide(self):
-        pass
-
-    def restore_pdb_formatting(self):
-        pass
-
-    def calc_stability(self):
-        # MD?
         pass
 
     def optimize(self, raw_candidate: List[RosettaWrapper.REBprocessor.Node], initpops: List[Population] = None,

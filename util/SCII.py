@@ -1,7 +1,6 @@
 import logging
 import math
 import os.path
-import pprint
 import statistics
 from pathlib import Path
 from typing import List, Union
@@ -798,8 +797,8 @@ def scii_for_pdb(path: Union[str, Path], chain: str = None, radius: float = 7.0,
                  use_centroid: bool = False) -> Union[float, dict]:
     """
     Calculates the side chain interaction index for a given pdb by calculating the average SCII for each residue and
-    every partner residue within a certain radius around it. The distance is calculated between the centroid of all
-    atoms in the residue.
+    every partner residue within a certain radius around it. The distance is calculated between the closest two atoms of
+    of the two residues in question.
     Based on:
     Gehenn, K., Pipkorn, R., & Reed, J. (2003). Successful Design and Synthesis of a Polarity-Triggered β → α
     Conformational Switch Using the Side Chain Interaction Index (SCII) as a Measure of Local Stuctural Stability.
@@ -812,7 +811,7 @@ def scii_for_pdb(path: Union[str, Path], chain: str = None, radius: float = 7.0,
     :param segment_size: What size of segment to use, if per-segment SCII is to be calculated. Default is false, set to
         any integer to enable segment-wise SCII
     :param use_centroid: Whether to use centroids for the inter-residue distance calculations, or the distance between
-        the closest two atoms of each residue
+        the closest two atoms of each residue. Default: False, use closest two atoms.
     :return: The SCII for the molecule in the PDB.
     """
     try:
@@ -871,7 +870,7 @@ def scii_for_pdb(path: Union[str, Path], chain: str = None, radius: float = 7.0,
                     for a2 in atoms2:
                         dist = _dist([a1["X"], a1["Y"], a1["Z"]], [a2["X"], a2["Y"], a2["Z"]])
                         if dist >= 22:
-                            # tryptophan is ~10 angstrom along longest axis, if an atom is more than 22 angstrom away.
+                            # tryptophan is ~10 angstrom along longest axis, if an atom is more than 22 angstrom away,
                             # it can't be within the set radius, even if both residues are tryptophans and the sampled
                             # atoms were the worst possible choice. Has an added safety margin of 2 angstrom
                             _ = True

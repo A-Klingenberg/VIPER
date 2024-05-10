@@ -216,7 +216,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                          cm().get("optimize.ga.contact_checking.emit_warning", True))
         self.config["scii_do_score_mod"] = config.get("scii_do_score_mod",
                                                       cm().get("optimize.ga.scii.adjust_score", True))
-        self.config["scii_score_radius"] = config.get("score_scii_radius", cm().get("optimize.ga.scii.radius", 7))
+        self.config["scii_score_radius"] = config.get("score_scii_radius", cm().get("optimize.ga.scii.radius", 7.0))
         self.config["scii_score_threshold"] = config.get("score_scii_threshold",
                                                          cm().get("optimize.ga.scii.threshold", 0.4063))
         self.config["scii_score_stepping_width"] = config.get("score_scii_stepping_width",

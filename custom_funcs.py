@@ -7,9 +7,10 @@ from typing import List, Union
 if typing.TYPE_CHECKING:
     import modules.stages.PeptideGenerator
     import modules.stages.optimize.GAStrategy
+    import modules.interfaces.ResSelectionStrategy
 
 
-def greedy_expand_node_inclusion(config: modules.stages.PeptideGenerator._SelectionStrategies.GreedyExpand,
+def greedy_expand_node_inclusion(config: modules.stages.PeptideGenerator.GreedyExpand,
                                  add_to: list, n: modules.stages.PeptideGenerator.REBprocessor.Node,
                                  depth: int) -> None:
     """
@@ -27,7 +28,7 @@ def greedy_expand_node_inclusion(config: modules.stages.PeptideGenerator._Select
     return NotImplemented
 
 
-def fragment_joiner_node_inclusion(config: modules.stages.PeptideGenerator._SelectionStrategies.FragmentJoiner,
+def fragment_joiner_node_inclusion(config: modules.stages.PeptideGenerator.FragmentJoiner,
                                    n: modules.stages.PeptideGenerator.REBprocessor.Node, to_chain: str,
                                    curr_strength: float, add_to_strength: float = 0, curr_length: int = 0,
                                    ignore_cutoff: bool = True, damping_factor: float = 1) -> bool:
@@ -53,7 +54,7 @@ def fragment_joiner_node_inclusion(config: modules.stages.PeptideGenerator._Sele
     return NotImplemented
 
 
-class CustomSelectionStrategy(modules.stages.PeptideGenerator._SelectionStrategies.SelectionStrategy):
+class CustomSelectionStrategy(modules.interfaces.ResSelectionStrategy.ResSelectionStrategy):
     """
     You can implement your own selection strategy here. Have a look at the selection strategies in PeptideGenerator to
     understand how these should be architected. Make sure your selection strategy implements the 'reduce' function below,
