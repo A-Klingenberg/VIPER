@@ -9,7 +9,7 @@
   "reuse_preprocessed": true,
   "remove_other_chains": true,
   "rosetta_config": {
-    "path": "",
+    "path": "/MODIFY/THIS/WITH/YOUR/PATH/TO/rosetta_source",
     "path_out": "rosetta_output",
     "random_seed": 3333333,
     "use_num_cores": 8,
