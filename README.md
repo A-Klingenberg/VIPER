@@ -67,3 +67,7 @@ or setting `"verbose": true` in the config file. Viper should be able to give yo
 open a GitHub issue, briefly explain the problem you've encountered, and append the last 100 lines of your log file with the `--verbose` flag set.
 
 ---
+## Disclaimer
+
+These programs are distributed in the hope that they will be useful, but without any warranty; without even the implied warranty of merchantability or fitness for any purpose.
+The entire risk as to the quality and performance of the program is with the user.
