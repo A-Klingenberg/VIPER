@@ -492,8 +492,9 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             isolated_peptide_DSSP = PDBtool.getDSSP(os.path.join(complex_pdb.parent, "best_peptide.pdb"))
             bound_peptide_DSSP = PDBtool.getDSSP(
                 PDBtool.remove_chain(os.path.join(complex_pdb.parent, "best_complex.pdb"),
-                                     [_ for _ in PDBtool.get_chains(best_complex) if
-                                      _ != PDBtool.get_chains(best_peptide)[0]]))
+                                     [_ for _ in
+                                      PDBtool.get_chains(os.path.join(complex_pdb.parent, "best_complex.pdb")) if
+                                      _ != PDBtool.get_chains(os.path.join(complex_pdb.parent, "best_peptide.pdb"))[0]]))
 
             with open(os.path.join(peptide_pdb.parent, "DSSP_isolated_peptide"), "w") as out:
                 for i in isolated_peptide_DSSP:
