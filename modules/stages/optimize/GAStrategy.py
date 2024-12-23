@@ -515,7 +515,10 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                         dssp_warnings[i]["amino_acid"] = isolated[1]
                         dssp_warnings[i]["isolated_struc"] = isolated[2]
                         dssp_warnings[i]["bound_struc"] = bound[2]
+                        i += 1
             if len(dssp_warnings) > 0:
+                logging.info(
+                    f"In total, {len(dssp_warnings) / len(isolated_peptide_DSSP) * 100}% of the original secondary structure was lost.")
                 with open(os.path.join(peptide_pdb.parent, "dssp_warnings.json"), "w") as out:
                     out.write(pprint.pformat(dssp_warnings))
 
