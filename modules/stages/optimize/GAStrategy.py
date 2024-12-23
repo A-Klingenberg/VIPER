@@ -494,6 +494,13 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                                                                       [_ for _ in PDBtool.get_chains(best_complex) if
                                                                        _ != PDBtool.get_chains(best_peptide)[0]]))
 
+            with open(os.path.join(peptide_pdb.parent, "DSSP_isolated_peptide"), "w") as out:
+                for i in isolated_peptide_DSSP:
+                    out.write(str(i) + "\n")
+            with open(os.path.join(peptide_pdb.parent, "DSSP_bound_peptide"), "w") as out:
+                for i in bound_peptide_DSSP:
+                    out.write(str(i) + "\n")
+
             dssp_warnings = {}
             i = 0
             for isolated, bound in zip(isolated_peptide_DSSP, bound_peptide_DSSP):
@@ -509,7 +516,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
                         dssp_warnings[i]["isolated_struc"] = isolated[2]
                         dssp_warnings[i]["bound_struc"] = bound[2]
             if len(dssp_warnings) > 0:
-                with open(os.path.join(complex_pdb.parent, "dssp_warnings.json"), "w") as out:
+                with open(os.path.join(peptide_pdb.parent, "dssp_warnings.json"), "w") as out:
                     out.write(pprint.pformat(dssp_warnings))
 
         # Get interface energy
