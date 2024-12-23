@@ -474,7 +474,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
         shutil.copyfile(os.path.join(relax_path, "complex", best_complex + ".pdb"),
                         os.path.join(complex_pdb.parent, "best_complex.pdb"))
 
-        if cm.get("optimize.ga.check_dssp", default=False):
+        if cm().get("optimize.ga.check_dssp", default=False):
             # Make sure peptide for structure analysis is energetically favorable relaxed
             relax_path = os.path.join(peptide_pdb.parent, "relax")
             os.makedirs(os.path.join(relax_path, "peptide"), exist_ok=True)
