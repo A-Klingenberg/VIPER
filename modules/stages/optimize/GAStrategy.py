@@ -396,7 +396,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
     def __getstate__(self):
         temp_dict = self.__dict__.copy()
         del temp_dict["rw"]  # Remove RosettaWrapper from pickled GAStrategy object to hopefully stop RecursionErrors
-        #del temp_dict["ref_reb"]  # same reasoning here
+        # del temp_dict["ref_reb"]  # same reasoning here
         return temp_dict
 
     def _scii(self, scii: float) -> Union[
@@ -473,6 +473,44 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             os.path.normpath(os.path.join(relax_path, "complex", f"score_relax.sc")), "total_score")
         shutil.copyfile(os.path.join(relax_path, "complex", best_complex + ".pdb"),
                         os.path.join(complex_pdb.parent, "best_complex.pdb"))
+
+        if cm.get("optimize.ga.check_dssp", default=False):
+            # Make sure peptide for structure analysis is energetically favorable relaxed
+            relax_path = os.path.join(peptide_pdb.parent, "relax")
+            os.makedirs(os.path.join(relax_path, "peptide"), exist_ok=True)
+            RosettaWrapper.RosettaWrapper().run(RosettaWrapper.Flags().relax_base, flag_suffix=peptide, options={
+                "-in:file:s": peptide_pdb,
+                "-nstruct": self.config["num_relax_individual"],
+                "-out:path:all": os.path.join(relax_path, "complex"),
+                "-out:suffix": "_relax",
+            })
+            best_peptide, peptide_scores = RosettaWrapper.ScoreFileParser.get_extremum(
+                os.path.normpath(os.path.join(relax_path, "peptide", f"score_relax.sc")), "total_score")
+            shutil.copyfile(os.path.join(relax_path, "peptide", best_peptide + ".pdb"),
+                            os.path.join(peptide_pdb.parent, "best_peptide.pdb"))
+
+            isolated_peptide_DSSP = PDBtool.getDSSP(best_peptide)
+            bound_peptide_DSSP = PDBtool.getDSSP(PDBtool.remove_chain(best_complex,
+                                                                      [_ for _ in PDBtool.get_chains(best_complex) if
+                                                                       _ != PDBtool.get_chains(best_peptide)[0]]))
+
+            dssp_warnings = {}
+            i = 0
+            for isolated, bound in zip(isolated_peptide_DSSP, bound_peptide_DSSP):
+                if isolated[2] != bound[2]:  # DSSP secondary structure code
+                    logging.debug(f"Secondary structure of peptide residue {isolated[0]} mismatches:")
+                    logging.debug(f"Isolated: {str(isolated)}")
+                    logging.debug(f"Bound: {str(bound)}")
+                    if isolated[2] != "-" and bound[2] == "-":
+                        # Structure was previously other than 'None' and is now 'None'
+                        dssp_warnings[i] = {}
+                        dssp_warnings[i]["DSSP_id"] = isolated[0]
+                        dssp_warnings[i]["amino_acid"] = isolated[1]
+                        dssp_warnings[i]["isolated_struc"] = isolated[2]
+                        dssp_warnings[i]["bound_struc"] = bound[2]
+            if len(dssp_warnings) > 0:
+                with open(os.path.join(complex_pdb.parent, "dssp_warnings.json"), "w") as out:
+                    out.write(pprint.pformat(dssp_warnings))
 
         # Get interface energy
         score_path = os.path.join(self.out_path, f"gen{self.generation}_{peptide}", "interface_score.sc")
@@ -678,5 +716,6 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             ordered = sorted(self.score_repo.items(), key=lambda tup: tup[1]["total"])
 
         l = logging.getLogger("summary")
-        l.info(f"Finished running the genetic algorithm! These are the (up to) three best candidates: {pprint.pformat(ordered[:3], compact=True)}")
+        l.info(
+            f"Finished running the genetic algorithm! These are the (up to) three best candidates: {pprint.pformat(ordered[:3], compact=True)}")
         return best[0], best[1]["total"]
