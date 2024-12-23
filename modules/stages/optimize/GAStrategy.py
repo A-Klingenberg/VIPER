@@ -489,10 +489,11 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             shutil.copyfile(os.path.join(relax_path, "peptide", best_peptide + ".pdb"),
                             os.path.join(peptide_pdb.parent, "best_peptide.pdb"))
 
-            isolated_peptide_DSSP = PDBtool.getDSSP(best_peptide)
-            bound_peptide_DSSP = PDBtool.getDSSP(PDBtool.remove_chain(best_complex,
-                                                                      [_ for _ in PDBtool.get_chains(best_complex) if
-                                                                       _ != PDBtool.get_chains(best_peptide)[0]]))
+            isolated_peptide_DSSP = PDBtool.getDSSP(os.path.join(complex_pdb.parent, "best_peptide.pdb"))
+            bound_peptide_DSSP = PDBtool.getDSSP(
+                PDBtool.remove_chain(os.path.join(complex_pdb.parent, "best_complex.pdb"),
+                                     [_ for _ in PDBtool.get_chains(best_complex) if
+                                      _ != PDBtool.get_chains(best_peptide)[0]]))
 
             with open(os.path.join(peptide_pdb.parent, "DSSP_isolated_peptide"), "w") as out:
                 for i in isolated_peptide_DSSP:
