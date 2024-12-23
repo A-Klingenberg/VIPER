@@ -481,7 +481,7 @@ class GAStrategy(OptimizationStrategy.OptimizationStrategy):
             RosettaWrapper.RosettaWrapper().run(RosettaWrapper.Flags().relax_base, flag_suffix=peptide, options={
                 "-in:file:s": peptide_pdb,
                 "-nstruct": self.config["num_relax_individual"],
-                "-out:path:all": os.path.join(relax_path, "complex"),
+                "-out:path:all": os.path.join(relax_path, "peptide"),
                 "-out:suffix": "_relax",
             })
             best_peptide, peptide_scores = RosettaWrapper.ScoreFileParser.get_extremum(
