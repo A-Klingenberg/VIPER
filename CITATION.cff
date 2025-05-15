@@ -8,12 +8,25 @@ message: >-
   metadata from this file.
 type: software
 authors:
-  - given-names: Arne
+  - given-names: Anna Sophie
     family-names: Klingenberg
     email: aklingenberg@unomaha.edu
     affiliation: >-
-      Ghersi Lab, University of Nebraska at
-      Omaha
+      Department of Information Systems and Quantitative
+      Analysis, University of Nebraska at Omaha, Omaha,
+      Nebraska, USA
+  - given-names: Dario
+    family-names: Ghersi
+    affiliation: >-
+      School of Interdisciplinary Informatics, University of
+      Nebraska at Omaha, Omaha, Nebraska USA
+    email: dghersi@unomaha.edu
+    orcid: 'https://orcid.org/0000-0002-0630-0843'
+identifiers:
+  - type: doi
+    value: 10.1089/cmb.2024.0866
+  - type: doi
+    value: 10.5281/zenodo.10897858
 repository-code: 'https://github.com/A-Klingenberg/VIPER'
 abstract: >-
   VIPER is a framework for the automated design of
@@ -24,5 +37,3 @@ keywords:
   - decoy peptide
   - attachment inhibitor
 license: MIT
-version: 1.0.1
-date-released: '2024-03-27'
